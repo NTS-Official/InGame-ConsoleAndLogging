@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "ingamecnl",
+  "version": "${version}",
+  "name": "In-Game Console & Logging",
+  "description": "This is an example description! Tell everyone what your mod is about!",
+  "authors": [
+    "Me!"
+  ],
+  "contact": {
+    "homepage": "https://fabricmc.net/",
+    "sources": "https://github.com/FabricMC/fabric-example-mod"
+  },
+  "license": "CC0-1.0",
+  "icon": "assets/ingamecnl/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.nts.ingamecnl.fabric.InGameConsoleFabric"
+    ]
+  },
+  "mixins": [
+    "ingamecnl.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "~26.1.2",
+    "java": ">=25",
+    "architectury": ">=20.1.16",
+    "fabric-api": "*",
+    "fabric-language-kotlin": ">=${fabric_language_kotlin_version}"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

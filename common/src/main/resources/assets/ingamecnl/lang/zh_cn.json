@@ -1,0 +1,16 @@
+{
+  "key.category.ingamecnl.console": "游戏内控制台",
+  "key.ingamecnl.toggle_console": "打开／关闭控制台",
+  "console.ingamecnl.title": "游戏内控制台",
+  "console.ingamecnl.mode.log": "日志模式  $",
+  "console.ingamecnl.mode.command": "命令模式  #",
+  "console.ingamecnl.close": "关闭控制台（Esc）",
+  "console.ingamecnl.input": "控制台输入",
+  "console.ingamecnl.empty": "日志采集尚未接入，当前没有日志记录。",
+  "console.ingamecnl.status.log": "本地日志命令 · filter 与 grep 尚未接入",
+  "console.ingamecnl.status.command": "本地服务端控制台 · 命令执行尚未接入",
+  "console.ingamecnl.command.available": "使用当前世界的内置服务端控制台",
+  "console.ingamecnl.command.unavailable": "需要本地世界中正在运行的内置服务端",
+  "console.ingamecnl.submit.log_unavailable": "日志命令尚未接入，输入已保留为草稿。",
+  "console.ingamecnl.submit.command_unavailable": "服务端命令尚未接入，未执行命令，输入已保留为草稿。"
+}
