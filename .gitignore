@@ -33,3 +33,7 @@ build/
 
 # Skills
 .graphflow/
+
+# Minecraft
+**/run/
+**/build/

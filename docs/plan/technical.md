@@ -19,26 +19,35 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | --- | --- |
 | [InGameConsole.kt](../../common/src/main/kotlin/com/nts/ingamecnl/InGameConsole.kt) | Mod 标识常量 |
 | [ConsoleClient.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/ConsoleClient.kt) | 共享初始化入口 `ConsoleClient.initialize()`、客户端状态和控制台界面 |
+| [KeyboardHandlerMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/KeyboardHandlerMixin.java) | 全局键盘与字符输入接入 |
+| [MouseHandlerMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/MouseHandlerMixin.java) | 全局鼠标热键接入 |
+| [MinecraftScreenMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/MinecraftScreenMixin.java) | 覆盖前界面的挂起、恢复与生命周期接入 |
 | [InGameConsoleFabric.kt](../../fabric/src/main/kotlin/com/nts/ingamecnl/fabric/InGameConsoleFabric.kt) | Fabric 客户端生命周期接入 |
 | [InGameConsoleNeoForge.kt](../../neoforge/src/main/kotlin/com/nts/ingamecnl/neoforge/InGameConsoleNeoForge.kt) | NeoForge 客户端生命周期接入 |
 
-平台模块分别依赖 `common`，`common` 不依赖平台模块。共享实现使用 Architectury 的 `KeyMappingRegistry` 与 `ClientTickEvent.CLIENT_POST`，不引入平台专属按键或 tick API。
+平台模块分别依赖 `common`，`common` 不依赖平台模块。共享实现使用 Architectury 的 `KeyMappingRegistry` 注册按键。客户端 Mixin 由 [ingamecnl.mixins.json](../../common/src/main/resources/ingamecnl.mixins.json) 声明，使用 Java 进行事件桥接，输入与界面规则统一由 Kotlin 入口负责。
 
 ## 阶段 1：状态与界面
 
-`ConsoleClient` 对外仅暴露初始化方法，模式、草稿和 `Screen` 类型保持文件私有。共享状态随客户端初始化建立，由客户端线程读写；每次打开面板创建一个 `Screen`，草稿独立于界面实例保留。
+`ConsoleClient` 是平台入口与 Mixin 的唯一共享入口，模式、草稿和控制台 `Screen` 类型保持文件私有。共享状态随客户端初始化建立，由客户端线程读写；每次打开面板创建一个 `Screen`，草稿独立于界面实例保留。
 
-热键默认使用 grave accent，分类标识为 `ingamecnl:console`。每次客户端 tick 消费已积累的按键点击；只在已有世界且没有其他 `Screen` 时打开面板，聊天、物品栏和菜单继续接收自己的输入。
+热键默认使用 grave accent，分类标识为 `ingamecnl:console`。键盘与鼠标 Mixin 在原始输入处理入口消费匹配的热键，主菜单、世界选择、聊天、物品栏和游戏中均可打开；按键设置正在捕获新绑定时优先接收事件。
 
-键盘热键使用打开按住、就绪、关闭按住三种手势状态：首次释放打开键后进入就绪，下一次按下并释放热键时关闭。按住期间消费重复按键与字符事件，不反复开关；鼠标绑定在点击时关闭，首次释放打开按钮后进入就绪。
+开关由 GLFW 的按下事件触发，保存正在按住的键或鼠标按钮，释放时清除。按住期间消费对应重复事件、释放事件与键盘字符事件，每次按下只开关一次，开关键不进入输入框。
+
+打开时保存原 `Screen`，通过 `Minecraft.setScreen` 安装控制台。生命周期桥接在覆盖期间挂起原界面的 `removed`，恢复时跳过重复 `added` 和初始化；尺寸改变时调用 `resize`。原界面继续更新和绘制，键鼠输入由控制台接收。游戏切换到其他界面时正常移除挂起界面，关闭面板时恢复原界面、草稿和焦点。
 
 `ConsoleScreen` 使用目标版本的 `extractRenderState(GuiGraphicsExtractor, …)` 绘制，输入事件使用 `KeyEvent`、`MouseButtonEvent`。面板覆盖屏幕上方约 65% 区域，不绘制全屏模糊背景，`isPauseScreen()` 返回 `false`。
 
-模式切换时替换输入框内容并将焦点交还输入框，两个草稿分别保存。窗口尺寸改变时仅重排既有控件，保留文本、选区与焦点。所有文案使用语言资源，固定前缀在输入框外绘制。
+Shift+Tab 在界面层消费，优先于普通 Tab 焦点导航与自定义开关热键；从按下到释放只切换一次。模式切换时替换输入框内容并将焦点交还输入框，两个草稿分别保存。窗口尺寸改变时仅重排既有控件，保留文本、选区与焦点。所有文案使用语言资源，固定前缀与行尾切换提示在输入框外绘制；输入区域预留提示宽度，窄窗采用简短提示。
 
-打开面板时记录当前客户端世界对象。世界对象改变时关闭面板，不恢复旧世界的界面。Esc、关闭按钮和热键均通过 `Minecraft.setScreen(null)` 返回游戏，由 Minecraft 恢复游戏输入。
+背景的 ARGB alpha 使用 10% 不透明度，文本维持正常透明度。输入框不绘制默认底色，关闭按钮使用无背景的文字按钮。
 
-命令模式的可用条件为当前世界仍与打开时一致、客户端连接有效、内置服务端已就绪且仍在运行；服务端状态变化时更新按钮，必要时退回日志模式并保留命令草稿。阶段 1 的 Enter 只提供尚未接入的反馈。
+`PanelTransition` 保存起始展开比例、展开或收起目标及单调时钟起始值，按完整行程耗时线性计算当前位置。提前关闭和收起途中反向展开均从当前位置匀速移动，不跳回动画端点。每帧同步更新控件位置与可见区域裁剪，鼠标命中使用相同位置。
+
+打开面板时记录当前客户端世界对象，存档外允许为空。世界对象改变时立即关闭面板，不恢复旧世界的界面。Esc、关闭按钮和热键先启动收起；收起期间停用输入编辑和关闭按钮，清除 tooltip，完成后通过 `Minecraft.setScreen(previousScreen)` 恢复原界面；原界面为空时返回游戏。
+
+命令模式的可用条件为当前世界非空且仍与打开时一致、客户端连接有效、内置服务端已就绪且仍在运行。存档外和远程服务器连接中禁用命令模式；不可用时 Shift+Tab 显示提示并保持日志模式，已进入命令模式时则自动退回并保留命令草稿。阶段 1 的 Enter 只提供尚未接入的反馈。
 
 ## 后续阶段：记录与状态所有权
 
