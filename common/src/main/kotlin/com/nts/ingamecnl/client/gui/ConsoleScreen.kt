@@ -26,7 +26,6 @@ internal class ConsoleScreen(
     val previousScreen: Screen?,
     val overlayOnly: Boolean = false,
 ) : Screen(Component.translatable("console.ingamecnl.title")) {
-    val openedLevel = minecraft.level
     private var modeSwitchGesture = ModeSwitchGesture.READY
     internal var transition = PanelTransition(0f, PanelTarget.EXPANDED, System.nanoTime())
     internal lateinit var input: EditBox
@@ -42,9 +41,11 @@ internal class ConsoleScreen(
         get() = if (overlayOnly) ConsoleConfig.overlayAnimationNanos() else SLIDE_DURATION_NANOS
     internal val contentBottomInset: Int
         get() = if (overlayOnly) 34 else 64
+    internal val acceptsTextInput: Boolean
+        get() = !overlayOnly && state.mode != ConsoleMode.VIEW_ONLY
     internal val commandAvailable: Boolean
-        get() = minecraft.level === openedLevel && minecraft.level != null &&
-            minecraft.connection != null && minecraft.singleplayerServer?.let {
+        get() = minecraft.level != null && minecraft.connection != null &&
+            minecraft.singleplayerServer?.let {
                 it.isRunning && !it.isStopped && it.isReady
             } == true
     internal val modeSwitchHint: String
@@ -137,11 +138,6 @@ internal class ConsoleScreen(
             transition.fractionAt(System.nanoTime(), slideDurationNanos) == 0f
 
     override fun tick() {
-        if (minecraft.level !== openedLevel) {
-            if (minecraft.screen === this) minecraft.setScreen(null)
-            state.mode = ConsoleMode.VIEW_ONLY
-            return
-        }
         if (transition.target == PanelTarget.COLLAPSED &&
             transition.fractionAt(System.nanoTime(), slideDurationNanos) == 0f
         ) {

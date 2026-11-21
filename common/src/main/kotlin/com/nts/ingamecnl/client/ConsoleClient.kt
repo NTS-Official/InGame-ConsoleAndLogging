@@ -75,6 +75,10 @@ object ConsoleClient {
         }
         if ((minecraft.screen as? KeyBindsScreen)?.selectedKey != null) return false
         if (minecraft.screen is ConfigScreen) return false
+        val current = minecraft.screen
+        if (current is ConsoleScreen && current.acceptsTextInput &&
+            toggleKeyMapping?.matches(event) == true
+        ) return false
         if (viewOnlyActive) return consumeViewOnlyKey(minecraft, action, event, key)
         val mapping = toggleKeyMapping ?: return false
         if (!mapping.matches(event)) return false
@@ -164,7 +168,6 @@ object ConsoleClient {
         val width = minecraft.window.guiScaledWidth
         val height = minecraft.window.guiScaledHeight
         val overlay = viewOnlyOverlay
-            ?.takeIf { it.openedLevel === minecraft.level }
             ?: ConsoleScreen(state, null, overlayOnly = true).also { viewOnlyOverlay = it }
         if (overlay.width != width || overlay.height != height) overlay.init(width, height)
         viewOnlyClosing = false
@@ -200,10 +203,6 @@ object ConsoleClient {
     private fun tickOverlay(client: Minecraft) {
         if (!viewOnlyActive) return
         val overlay = viewOnlyOverlay ?: return
-        if (overlay.openedLevel !== client.level) {
-            hideViewOnly(immediate = true)
-            return
-        }
         val width = client.window.guiScaledWidth
         val height = client.window.guiScaledHeight
         if (overlay.width != width || overlay.height != height) overlay.init(width, height)
