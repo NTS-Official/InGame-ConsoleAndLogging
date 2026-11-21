@@ -11,8 +11,7 @@ authors = "NoTuring_Steve"
 description = '''
 An in-game logging viewer and command console with a adjustable overlay.
 '''
-iconFile = "assets/ingamecnl/icon.png"
-bannerFile = "assets/ingamecnl/icon_large.png"
+logoFile = "assets/ingamecnl/icon_large.png"
 
 [[dependencies.ingamecnl]]
 modId = "neoforge"

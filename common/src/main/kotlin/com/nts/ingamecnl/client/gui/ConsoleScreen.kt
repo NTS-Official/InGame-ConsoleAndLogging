@@ -66,9 +66,7 @@ internal class ConsoleScreen(
             PlainTextButton(0, 0, 20, 20, Component.literal("×"), { onClose() }, font),
         )
         closeButton.setTooltip(
-            Tooltip.create(
-                Component.translatable("console.ingamecnl.close", ConsoleClient.keyLabel(ConsoleClient.closeKey())),
-            ),
+            Tooltip.create(Component.translatable("console.ingamecnl.close")),
         )
         input = addRenderableWidget(EditBox(font, 1, 20, Component.translatable("console.ingamecnl.input")))
         input.setBordered(false)
@@ -120,9 +118,7 @@ internal class ConsoleScreen(
         input.setEditable(true)
         closeButton.active = true
         closeButton.setTooltip(
-            Tooltip.create(
-                Component.translatable("console.ingamecnl.close", ConsoleClient.keyLabel(ConsoleClient.closeKey())),
-            ),
+            Tooltip.create(Component.translatable("console.ingamecnl.close")),
         )
     }
 
@@ -162,8 +158,7 @@ internal class ConsoleScreen(
     }
 
     override fun keyPressed(event: KeyEvent): Boolean {
-        val switchKey = ConsoleClient.switchModeKey()
-        if (switchKey?.matches(event) == true && event.hasShiftDown() &&
+        if (event.key() == GLFW.GLFW_KEY_TAB && event.hasShiftDown() &&
             (modeSwitchGesture == ModeSwitchGesture.READY || modeSwitchGesture == ModeSwitchGesture.HELD)
         ) {
             if (transition.target == PanelTarget.COLLAPSED || modeSwitchGesture == ModeSwitchGesture.HELD) return true
@@ -175,7 +170,7 @@ internal class ConsoleScreen(
             }
             return true
         }
-        if (ConsoleClient.closeKey()?.matches(event) == true) {
+        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
             onClose()
             return true
         }
@@ -207,7 +202,7 @@ internal class ConsoleScreen(
     }
 
     override fun keyReleased(event: KeyEvent): Boolean {
-        if (ConsoleClient.switchModeKey()?.matches(event) == true && modeSwitchGesture == ModeSwitchGesture.HELD) {
+        if (event.key() == GLFW.GLFW_KEY_TAB && modeSwitchGesture == ModeSwitchGesture.HELD) {
             modeSwitchGesture = ModeSwitchGesture.READY
             return true
         }

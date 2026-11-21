@@ -25,12 +25,9 @@ import org.lwjgl.glfw.GLFW
 
 object ConsoleClient {
     private var toggleKeyMapping: KeyMapping? = null
-    private var switchModeMapping: KeyMapping? = null
     private var pageUpMapping: KeyMapping? = null
     private var pageDownMapping: KeyMapping? = null
     private var goToBottomMapping: KeyMapping? = null
-    private var closeMapping: KeyMapping? = null
-    private var openConfigMapping: KeyMapping? = null
     private val state = ConsoleState()
     private var heldKey: InputConstants.Key? = null
     private var heldMouseButton: Int? = null
@@ -50,12 +47,9 @@ object ConsoleClient {
             return mapping
         }
         toggleKeyMapping = register("key.ingamecnl.toggle_console", GLFW.GLFW_KEY_GRAVE_ACCENT)
-        switchModeMapping = register("key.ingamecnl.switch_mode", GLFW.GLFW_KEY_TAB)
         pageUpMapping = register("key.ingamecnl.page_up", GLFW.GLFW_KEY_PAGE_UP)
         pageDownMapping = register("key.ingamecnl.page_down", GLFW.GLFW_KEY_PAGE_DOWN)
         goToBottomMapping = register("key.ingamecnl.go_to_bottom", GLFW.GLFW_KEY_END)
-        closeMapping = register("key.ingamecnl.close_console", GLFW.GLFW_KEY_ESCAPE)
-        openConfigMapping = register("key.ingamecnl.open_config", GLFW.GLFW_KEY_F8)
         ClientTickEvent.CLIENT_POST.register(object : ClientTickEvent.Client {
             override fun tick(client: Minecraft) = tickOverlay(client)
         })
@@ -81,11 +75,6 @@ object ConsoleClient {
         }
         if ((minecraft.screen as? KeyBindsScreen)?.selectedKey != null) return false
         if (minecraft.screen is ConfigScreen) return false
-        if (action == GLFW.GLFW_PRESS && openConfigMapping?.matches(event) == true) {
-            heldKey = key
-            openConfigScreen(minecraft)
-            return true
-        }
         if (viewOnlyActive) return consumeViewOnlyKey(minecraft, action, event, key)
         val mapping = toggleKeyMapping ?: return false
         if (!mapping.matches(event)) return false
@@ -133,7 +122,7 @@ object ConsoleClient {
             hideViewOnly()
             return true
         }
-        if (action == GLFW.GLFW_PRESS && event.hasShiftDown() && switchModeMapping?.matches(event) == true) {
+        if (action == GLFW.GLFW_PRESS && event.hasShiftDown() && event.key() == GLFW.GLFW_KEY_TAB) {
             heldKey = key
             openConsoleScreen(minecraft)
             return true
@@ -144,7 +133,7 @@ object ConsoleClient {
                 pageUpMapping?.matches(event) == true -> overlay.scrollPage(true)
                 pageDownMapping?.matches(event) == true -> overlay.scrollPage(false)
                 goToBottomMapping?.matches(event) == true -> overlay.returnToBottom()
-                closeMapping?.matches(event) == true -> hideViewOnly()
+                event.key() == GLFW.GLFW_KEY_ESCAPE -> hideViewOnly()
                 else -> return false
             }
             return true
@@ -201,10 +190,6 @@ object ConsoleClient {
         minecraft.setScreen(ConsoleScreen(state, minecraft.screen))
     }
 
-    private fun openConfigScreen(minecraft: Minecraft) {
-        minecraft.setScreen(ConsoleConfig.createScreen(minecraft.screen))
-    }
-
     internal fun enterViewOnly(previous: Screen?) {
         val minecraft = Minecraft.getInstance()
         state.mode = ConsoleMode.VIEW_ONLY
@@ -228,18 +213,14 @@ object ConsoleClient {
         }
     }
 
-    internal fun switchModeKey(): KeyMapping? = switchModeMapping
     internal fun pageUpKey(): KeyMapping? = pageUpMapping
     internal fun pageDownKey(): KeyMapping? = pageDownMapping
     internal fun goToBottomKey(): KeyMapping? = goToBottomMapping
-    internal fun closeKey(): KeyMapping? = closeMapping
-    internal fun openConfigKey(): KeyMapping? = openConfigMapping
 
     internal fun keyLabel(mapping: KeyMapping?): String =
         mapping?.translatedKeyMessage?.string ?: "-"
 
-    internal fun switchModeLabel(): String =
-        Component.translatable("console.ingamecnl.key.shift_plus", keyLabel(switchModeMapping)).string
+    internal fun switchModeLabel(): String = "Shift+Tab"
 
     internal fun overlayHint(): String = Component.translatable(
         "console.ingamecnl.overlay.hint",
@@ -247,8 +228,7 @@ object ConsoleClient {
         switchModeLabel(),
         keyLabel(pageUpMapping),
         keyLabel(pageDownMapping),
-        keyLabel(closeMapping),
-        keyLabel(openConfigMapping),
+        "Esc",
     ).string
 
     fun removeScreen(current: Screen, replacement: Screen?) {
