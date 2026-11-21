@@ -18,7 +18,14 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | 文件 | 职责 |
 | --- | --- |
 | [InGameConsole.kt](../../common/src/main/kotlin/com/nts/ingamecnl/InGameConsole.kt) | Mod 标识常量 |
-| [ConsoleClient.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/ConsoleClient.kt) | 共享初始化入口 `ConsoleClient.initialize()`、客户端状态和控制台界面 |
+| [ConsoleClient.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/ConsoleClient.kt) | 共享初始化入口 `ConsoleClient.initialize()`、客户端状态、控制台界面与实时日志视图 |
+| [LogCapture.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogCapture.kt) | Log4j Appender、客户端 tick 接收与记录文本限制 |
+| [LogInbox.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogInbox.kt) | 有界接收队列、序号分配与入队时的筛选快照 |
+| [LogHistory.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogHistory.kt) | 有界原始历史、实时视图与淘汰计数 |
+| [LogRecord.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogRecord.kt) | 不可变日志记录 |
+| [DisplayFilter.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/DisplayFilter.kt) | 级别与关键词筛选规则 |
+| [FilterCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/FilterCommand.kt) | `filter` 命令解析与规则应用 |
+| [LogLevel.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogLevel.kt) | 界面级别与 Log4j 级别映射 |
 | [KeyboardHandlerMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/KeyboardHandlerMixin.java) | 全局键盘与字符输入接入 |
 | [MouseHandlerMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/MouseHandlerMixin.java) | 全局鼠标热键接入 |
 | [MinecraftScreenMixin.java](../../common/src/main/java/com/nts/ingamecnl/mixin/client/MinecraftScreenMixin.java) | 覆盖前界面的挂起、恢复与生命周期接入 |
@@ -47,11 +54,11 @@ Shift+Tab 在界面层消费，优先于普通 Tab 焦点导航与自定义开�
 
 打开面板时记录当前客户端世界对象，存档外允许为空。世界对象改变时立即关闭面板，不恢复旧世界的界面。Esc、关闭按钮和热键先启动收起；收起期间停用输入编辑和关闭按钮，清除 tooltip，完成后通过 `Minecraft.setScreen(previousScreen)` 恢复原界面；原界面为空时返回游戏。
 
-命令模式的可用条件为当前世界非空且仍与打开时一致、客户端连接有效、内置服务端已就绪且仍在运行。存档外和远程服务器连接中禁用命令模式；不可用时 Shift+Tab 显示提示并保持日志模式，已进入命令模式时则自动退回并保留命令草稿。阶段 1 的 Enter 只提供尚未接入的反馈。
+命令模式的可用条件为当前世界非空且仍与打开时一致、客户端连接有效、内置服务端已就绪且仍在运行。存档外和远程服务器连接中禁用命令模式；不可用时 Shift+Tab 显示提示并保持日志模式，已进入命令模式时则自动退回并保留命令草稿。日志模式的 Enter 提交 `filter` 命令；命令模式的 Enter 只提供尚未接入的反馈。
 
-## 后续阶段：记录与状态所有权
+## 记录与状态所有权
 
-后续类型按下表拆分；纯规则不持有 Minecraft、Log4j 或线程执行器。
+核心类型按下表拆分；纯规则不持有 Minecraft、Log4j 或线程执行器。
 
 | 类型 | 内容 | 所有权 |
 | --- | --- | --- |
@@ -65,25 +72,27 @@ Shift+Tab 在界面层消费，优先于普通 Tab 焦点导航与自定义开�
 
 消息、异常堆栈、命令回显和命令反馈保留各自的记录类型。原始日志历史用于 `grep`，命令记录进入面板时间线，不回灌 Log4j。
 
-## 后续阶段：日志接收与筛选顺序
+## 阶段 2：日志接收与实时视图
 
-Log4j Appender 从事件中提取自己的不可变记录，不跨回调保留 Log4j 可复用事件。格式化消息与异常文本在记录大小限制内完成，随后写入 `LogInbox`。
+`LogCapture` 在客户端初始化时向根 LoggerConfig 添加名为 `ingamecnl-console` 的 `AbstractAppender`，并忽略 appender 异常。回调只把事件转换为不可变 `LogRecord` 后入队，不保留 Log4j 事件，也不在日志线程上排版或绘制。消息截断到 8000 字符，异常文本截断到 16000 字符，并记录截断状态。
 
-`LogInbox` 持有有界队列和明确命名的锁；日志入队、接收序号分配和实时筛选规则更新在同一同步边界内完成。每条入队记录携带当时的不可变 `DisplayFilter` 引用。客户端批量取出后将原始记录加入历史，再按该条记录携带的规则决定是否显示。
+`LogInbox` 持有有界队列与明确命名的锁；入队、序号分配和筛选规则更新在同一同步边界内完成。队列上限为 2048 条或 2 MiB 文本，达到上限时拒绝新记录并累计丢弃数，不阻塞日志线程。每条入队记录携带当时的 `DisplayFilter` 快照。客户端每个 tick 最多取出 256 条并最多耗时 2 ms，剩余记录留到后续 tick。
 
-规则更新以日志入队顺序为边界，不使用日志时间戳排序。已经入队但尚未绘制的日志仍使用原规则；之后接收的日志使用新规则。界面上的 `filter` 更新即时显示当前条件，不重新处理已经显示的记录。
+`LogHistory` 保留原始记录与实时视图两个有界队列，上限为 2000 条或 4 MiB 文本。超过上限时从头部淘汰最旧记录，同时移除实时视图中对应条目，并累计淘汰数。实时视图包含筛选通过的记录，保留入队时快照判断的结果；视图列表按版本号惰性生成快照，仅在记录或可见性变化时重建。丢弃数与淘汰数在状态行分别显示。
 
-队列达到容量上限时拒绝新日志并累计丢弃数量，不阻塞产生日志的线程。历史达到上限时淘汰最旧记录，同时移除对应实时视图条目；正在阅读的搜索结果独立持有所需记录。丢弃和淘汰数量在界面分别显示。
+规则更新以入队顺序为边界，不使用日志时间戳排序。已经入队但尚未绘制的记录仍使用原规则，之后入队的记录使用新规则；已经显示的记录不重新筛选，隐藏记录仍保留在原始历史中。
 
-客户端 tick 以条数与耗时双重预算接收数据，剩余记录留到后续 tick。界面只排版可见记录，布局缓存随记录淘汰、窗口宽度和字体变化失效。
+实时视图按记录序号保存顶部锚点。未滚动时从最新记录向上取可见内容并自动跟随；上翻后锚点固定，新记录到达或头部淘汰不改变顶部位置；锚点被淘汰时从当前最旧记录继续显示；回到底部时清除锚点。新增计数使用入队时记录的可见总数与锚点快照之差。
 
-容量项包括队列条数与文本大小、历史条数与文本大小、单条消息与异常文本长度、每 tick 接收预算。具体值按主计划的容量待确定项实施，不通过修改日志框架的全局级别限制内存。
+日志行以接收序号开头，后接 `[时间] [线程/级别] (logger) 消息`。时间与 Loom 控制台一致使用蓝色，线程和级别按级别着色，logger 使用青色，ERROR、FATAL 的消息使用红色；括号作为普通字符保留。消息按像素宽度换行，续行不重复前缀且从内容区左边开始，单条记录最多排版 8 行，超出部分以省略号结尾。布局只计算可见记录，行高随换行行数变化，滚动位置以记录锚点和可见高度共同确定。
 
-## 后续阶段：本地命令解析
+## 阶段 3：本地命令解析
 
-日志模式输入先解析为明确的命令值，再交给对应能力执行。解析错误返回可分类的输入错误，界面展示参数位置和用法；命令解析不直接修改日志列表或服务端状态。
+日志模式输入解析为明确的命令值，再交给对应能力执行。解析错误返回可分类的输入错误，界面展示错误文案并保留草稿；命令成功执行后清空输入。命令解析不直接修改日志列表或服务端状态。
 
-`filter level` 校验预定义级别，`filter keyword` 读取剩余文本，`reset` 和 `show` 使用主计划规定的子命令。`grep` 以参数名解析选项，接受调整后的选项顺序；重复选项、未知选项和缺失值均返回输入错误。
+阶段 2 已实现 `filter`：`filter level` 校验预定义级别，`filter keyword` 读取剩余文本，`filter reset`、`filter reset level`、`filter reset keyword` 与 `filter show` 使用主计划规定的子命令。`grep` 解析留待阶段 3。
+
+`grep` 以参数名解析选项，接受调整后的选项顺序；重复选项、未知选项和缺失值均返回输入错误。
 
 `grep` 的 `-k` 和 `-l` 按当前语法提供，`-t1`、`-t2` 可独立省略。带空格的值使用双引号；时间解析采用严格日期校验，按本机时区转换为时间点。短时间在查询提交时补齐当天日期，开始与结束时间使用同一基准日期。
 
@@ -122,5 +131,7 @@ HUD 与展开界面共享日志布局，裁剪绘制到可见区域。窗口缩�
 ## 验证入口
 
 两端构建与游戏运行命令见[使用与开发](../usage.md)。阶段 1 需要实际检查热键重绑定、模式切换、草稿保留、窗口缩放、世界退出和输入恢复。
+
+阶段 2 还需要在持续产生日志时检查跟随、翻页、回底与新增计数，检查修改筛选前后旧记录保持不变、后续记录按新规则显示，并分别触发队列丢弃与历史淘汰确认计数。两个加载器的开发客户端都需要运行检查；视觉检查由使用者完成。
 
 发布产物检查 Kotlin class 与共享资源存在；Fabric metadata 包含匹配的运行依赖，NeoForge metadata 引用的嵌套标准库实际存在。后续验证随对应功能阶段执行，不将测试依赖或测试替身加入生产产物。
