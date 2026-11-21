@@ -5,7 +5,6 @@
       <configuration>
         <autoDetectTypes>
           <platformType>ARCHITECTURY</platformType>
-          <platformType>FABRIC</platformType>
           <platformType>MIXIN</platformType>
           <platformType>MINECRAFT</platformType>
         </autoDetectTypes>

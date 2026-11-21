@@ -1,17 +1,18 @@
-modLoader = "javafml"
-loaderVersion = "[1,)"
+modLoader = "kotlinforforge"
+loaderVersion = "[6.5.0,)"
 #issueTrackerURL = ""
-license = "Insert License Here"
+license = "GPL-3.0-only"
 
 [[mods]]
 modId = "ingamecnl"
 version = "${version}"
 displayName = "In-Game Console & Logging"
-authors = "Me!"
+authors = "NoTuring_Steve"
 description = '''
-This is an example description! Tell everyone what your mod is about!
+An in-game logging viewer and command console with a adjustable overlay.
 '''
-#logoFile = ""
+iconFile = "assets/ingamecnl/icon.png"
+bannerFile = "assets/ingamecnl/icon_large.png"
 
 [[dependencies.ingamecnl]]
 modId = "neoforge"
@@ -31,6 +32,13 @@ side = "CLIENT"
 modId = "architectury"
 type = "required"
 versionRange = "[20.1.16,)"
+ordering = "AFTER"
+side = "CLIENT"
+
+[[dependencies.ingamecnl]]
+modId = "cloth_config"
+type = "required"
+versionRange = "[26.1.154,)"
 ordering = "AFTER"
 side = "CLIENT"
 

@@ -10,7 +10,9 @@ internal class LogInbox(
     private val characterCapacity: Int = 2 * 1024 * 1024,
 ) {
     private val lock = Any()
-    private val pending = ArrayDeque<PendingRecord>()
+    private val pending = arrayOfNulls<PendingRecord>(recordCapacity.coerceAtLeast(1))
+    private var head = 0
+    private var count = 0
     private var pendingCharacters = 0
     private var nextSequence = 0L
     private var currentFilter = DisplayFilter()
@@ -18,18 +20,25 @@ internal class LogInbox(
 
     fun offer(record: LogRecord) {
         synchronized(lock) {
-            if (pending.size >= recordCapacity || pendingCharacters + record.textSize > characterCapacity) {
+            if (count >= pending.size || pendingCharacters + record.textSize > characterCapacity) {
                 droppedCount++
                 return
             }
             val sequenced = record.copy(sequence = nextSequence++)
-            pending.addLast(PendingRecord(sequenced, currentFilter))
+            pending[(head + count) % pending.size] = PendingRecord(sequenced, currentFilter)
+            count++
             pendingCharacters += sequenced.textSize
         }
     }
 
     fun poll(): PendingRecord? = synchronized(lock) {
-        pending.removeFirstOrNull()?.also { pendingCharacters -= it.record.textSize }
+        if (count == 0) return@synchronized null
+        val slot = pending[head]
+        pending[head] = null
+        head = (head + 1) % pending.size
+        count--
+        pendingCharacters -= slot?.record?.textSize ?: 0
+        slot
     }
 
     fun filter(): DisplayFilter = synchronized(lock) { currentFilter }

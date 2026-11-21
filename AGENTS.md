@@ -26,6 +26,10 @@ Fabric 使用 Fabric Language Kotlin 提供运行时，NeoForge 将 Kotlin 标�
 
 优先通过命名、类型和清晰的控制流表达逻辑，尽量少写注释。仅为代码无法直接表达的必要约束或特殊行为添加简短注释，不添加复述实现的注释。
 
+## Mixin 与注入
+
+Mixin 注入优先使用 MixinExtras 提供的操作注解，例如 `@WrapOperation`、`@ModifyExpressionValue`、`@ModifyReceiver`、`@WrapWithCondition` 等，不使用 `@Redirect` 等旧式替换注解。只有 MixinExtras 无法表达目标语义时才使用旧方法，并在改动附近说明原因。
+
 ## 修改与决策
 
 收到功能需求或遇到测试失败时，先检查整体职责、数据流和现有抽象，定位问题根源。优先选择符合长期结构的调整，必要时重构、合并或删除已有实现，避免默认追加分支、状态、配置、兼容层和重复实现。

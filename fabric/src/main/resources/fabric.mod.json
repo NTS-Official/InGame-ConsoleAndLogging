@@ -3,20 +3,23 @@
   "id": "ingamecnl",
   "version": "${version}",
   "name": "In-Game Console & Logging",
-  "description": "This is an example description! Tell everyone what your mod is about!",
+  "description": "An in-game logging viewer and command console with a adjustable overlay.",
   "authors": [
-    "Me!"
+    "NoTuring_Steve"
   ],
   "contact": {
     "homepage": "https://fabricmc.net/",
     "sources": "https://github.com/FabricMC/fabric-example-mod"
   },
-  "license": "CC0-1.0",
+  "license": "GPL-3.0-only",
   "icon": "assets/ingamecnl/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
       "com.nts.ingamecnl.fabric.InGameConsoleFabric"
+    ],
+    "modmenu": [
+      "com.nts.ingamecnl.fabric.ModMenuIntegration"
     ]
   },
   "mixins": [
@@ -28,9 +31,10 @@
     "java": ">=25",
     "architectury": ">=20.1.16",
     "fabric-api": "*",
-    "fabric-language-kotlin": ">=${fabric_language_kotlin_version}"
+    "fabric-language-kotlin": ">=${fabric_language_kotlin_version}",
+    "cloth-config": ">=26.1.154"
   },
   "suggests": {
-    "another-mod": "*"
+    "modmenu": ">=18.0.2"
   }
 }

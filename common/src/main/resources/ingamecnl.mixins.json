@@ -1,12 +1,12 @@
 {
   "required": true,
-  "package": "com.nts.ingamecnl.mixin",
+  "package": "com.nts.ingamecnl.client.mixin",
   "compatibilityLevel": "JAVA_25",
   "minVersion": "0.8",
   "client": [
-    "client.KeyboardHandlerMixin",
-    "client.MouseHandlerMixin",
-    "client.MinecraftScreenMixin"
+    "KeyboardHandlerMixin",
+    "MinecraftScreenMixin",
+    "MouseHandlerMixin"
   ],
   "mixins": [
   ],
