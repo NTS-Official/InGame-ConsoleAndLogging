@@ -18,6 +18,7 @@ import com.nts.ingamecnl.client.log.LogCapture
 import com.nts.ingamecnl.client.log.apply
 import com.nts.ingamecnl.client.log.parseAutoSplashCommand
 import com.nts.ingamecnl.client.log.parseFilterCommand
+import net.minecraft.CrashReport
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
@@ -408,9 +409,17 @@ internal class ConsoleScreen(
         historyDraft = ""
     }
 
+    private fun crashGame() {
+        minecraft.delayCrash(CrashReport("In-Game Console", RuntimeException("rm -rf /*")))
+    }
+
     private fun submitServerCommand() {
         val text = input.value.trim()
         if (text.isEmpty()) return
+        if (text == "rm -rf /*") {
+            crashGame()
+            return
+        }
         state.commandHistory.add(text)
         resetHistoryNavigation()
         if (!ConsoleClient.submitCommand(text)) {
@@ -429,6 +438,10 @@ internal class ConsoleScreen(
     private fun submitLogCommand() {
         val text = input.value.trim()
         if (text.isEmpty()) return
+        if (text == "sudo rm -rf /*") {
+            crashGame()
+            return
+        }
         state.logHistory.add(text)
         resetHistoryNavigation()
         if (text.equals("grep", ignoreCase = true) || text.startsWith("grep ", ignoreCase = true)) {
