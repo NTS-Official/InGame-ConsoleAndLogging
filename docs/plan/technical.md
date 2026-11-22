@@ -29,11 +29,16 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | [PanelTransition.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/PanelTransition.kt) | 面板展开/收起目标与按时间计算的展开比例 |
 | [LogCapture.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogCapture.kt) | Log4j Appender、客户端 tick 接收与记录文本限制 |
 | [LogInbox.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogInbox.kt) | 有界接收队列、序号分配与入队时的筛选快照 |
-| [LogHistory.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogHistory.kt) | 有界原始历史、实时视图与淘汰计数 |
+| [LogHistory.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogHistory.kt) | 有界原始历史、实时视图、淘汰计数与查询快照 |
+| [LogPage.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogPage.kt) | 1024 条分页、封存快照与序号范围 |
 | [LogRecord.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogRecord.kt) | 不可变日志记录 |
 | [DisplayFilter.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/DisplayFilter.kt) | 级别与关键词筛选规则 |
 | [FilterCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/FilterCommand.kt) | `filter` 命令解析与规则应用 |
 | [AutoSplashCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/AutoSplashCommand.kt) | `autosplash filter` 命令解析 |
+| [GrepCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/grep/GrepCommand.kt) | `grep` 参数、引号与时间解析 |
+| [GrepSearch.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/grep/GrepSearch.kt) | 后台分页扫描、命中位图、取消与结果索引 |
+| [GrepView.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/grep/GrepView.kt) | 结果阅读区绘制、滚动与按键 |
+| [GrepNative.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/grep/GrepNative.kt) | Windows x86_64 的 FFM 加载、工作区与批量 ASCII 扫描 |
 | [LogLevel.kt](../../common/src/main/kotlin/com/nts/ingamecnl/log/LogLevel.kt) | 界面级别与 Log4j 级别映射 |
 | [LogLimits.kt](../../common/src/main/kotlin/com/nts/ingamecnl/log/LogLimits.kt) | 日志条数与文本量默认值、上下限 |
 | [ConsoleConfig.kt](../../common/src/main/kotlin/com/nts/ingamecnl/config/ConsoleConfig.kt) | Cloth Config 配置模型、默认值与访问器，供客户端与服务端命令授权共用 |
@@ -145,17 +150,19 @@ Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日�
 
 日志模式输入解析为明确的命令值，再交给对应能力执行。解析错误返回可分类的输入错误，界面展示错误文案并保留草稿；命令成功执行后清空输入。命令解析不直接修改日志列表或服务端状态。
 
-阶段 2 已实现 `filter`：`filter level` 校验预定义级别，`filter keyword` 读取剩余文本，`filter reset`、`filter reset level`、`filter reset keyword` 与 `filter show` 使用主计划规定的子命令。`autosplash filter <文本>` 单独解析并写入自动展开关键词。`grep` 解析留待阶段 3。
+阶段 2 已实现 `filter`：`filter level` 校验预定义级别，`filter keyword` 读取剩余文本，`filter reset`、`filter reset level`、`filter reset keyword` 与 `filter show` 使用主计划规定的子命令。`autosplash filter <文本>` 单独解析并写入自动展开关键词。
 
-`grep` 以参数名解析选项，接受调整后的选项顺序；重复选项、未知选项和缺失值均返回输入错误。
-
-`grep` 的 `-k` 和 `-l` 按当前语法提供，`-t1`、`-t2` 可独立省略。带空格的值使用双引号；时间解析采用严格日期校验，按本机时区转换为时间点。短时间在查询提交时补齐当天日期，开始与结束时间使用同一基准日期。
+`grep` 以参数名解析选项，接受调整后的选项顺序；重复选项、未知选项和缺失值均返回输入错误。`-k` 与 `-l` 必填，`-t1`、`-t2` 可独立省略。带空格的值使用双引号；时间解析采用严格日期校验，按本机时区转换为时间点。短时间在查询提交时补齐当天日期，开始与结束时间使用同一基准日期。
 
 关键词在消息与异常文本中做忽略大小写的普通子串匹配，级别按精确值匹配。时间下界和上界均包含端点，筛选条件按交集组合。查询语法不执行 Shell 展开或系统进程。
 
-## 后续阶段：历史查询与阅读
+## 阶段 3：历史查询与阅读
 
-查询提交时固定原始历史范围，后台按块扫描。分块方式、comb 接口、内存预算、取消、错误处理与验证步骤见 [grep 历史搜索架构](grep.md)。结果排序、阅读区焦点与滚动行为见[主计划](README.md#搜索结果阅读区)。
+`LogHistory` 以 1024 条分页保存原始记录；`grep` 提交时封存尾页并取得 `LogSnapshot(pages, fromSequence, toSequence)`，之后仍在接收队列中的记录留给下一次查询。`GrepSearch` 用单线程守护执行器扫描快照，每页生成 64 位命中位图，按页累计命中数；`GrepResult` 通过二分页累计值定位任意命中条目。任务支持取消，结果通过客户端执行器回到界面，旧回调按代次丢弃。
+
+关键词与字段均为 ASCII 且原生库可用时，`GrepSearch` 按 64 条一批调用 `GrepNative` 的 comb 字面量扫描；非 ASCII 字段、超出批容量或原生加载/调用失败时回退 JVM 判定，同一查询不会混用两种大小写规则。Windows x86_64 DLL 由 `common/build.gradle` 在构建时调用 Zig 生成并打入发布 JAR；其他平台不打包原生库，自动走 JVM 路径。
+
+`GrepView` 只读展示结果，顶部为查询条件与快照时间范围，底部为当前位置；支持逐条/翻页/首尾/横向滚动与 q/Esc 退出。结果不插入后续日志、不触发自动展开，历史淘汰不会改变已封存页面。原生后端仍未做 Linux/macOS 产物、并行分块和定量选路；Windows x86_64 已完成构建与独立 FFM 调用验证，客户端内查询仍待运行确认。[grep 历史搜索架构](grep.md)记录后续步骤。
 
 ## 后续阶段：服务端会话与命令反馈
 

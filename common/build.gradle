@@ -2,6 +2,53 @@ architectury {
     common rootProject.enabled_platforms.split(',')
 }
 
+def nativeProject = layout.projectDirectory.dir("src/native")
+def nativeResources = layout.buildDirectory.dir("generated/native-resources")
+
+tasks.register("buildNativeGrep") {
+    group = "build"
+    description = "Builds the optional comb grep library for the current platform."
+
+    inputs.files(fileTree(nativeProject) {
+        include "build.zig", "build.zig.zon", "src/**"
+    })
+    outputs.dir(nativeResources)
+
+    doLast {
+        if (!System.getProperty("os.name").toLowerCase().contains("windows")) {
+            logger.lifecycle("Skipping native grep: only Windows x86_64 is packaged.")
+            return
+        }
+        try {
+            def process = new ProcessBuilder("zig", "build", "-Drelease")
+                .directory(nativeProject.asFile)
+                .inheritIO()
+                .start()
+            if (process.waitFor() != 0) {
+                logger.warn("Skipping native grep: zig build exited with ${process.exitValue()}.")
+                return
+            }
+        } catch (Exception error) {
+            logger.warn("Skipping native grep: ${error.message}")
+            return
+        }
+        def dll = nativeProject.file("zig-out/bin/ingamecnl_grep.dll").asFile
+        if (!dll.isFile()) {
+            logger.warn("Skipping native grep: ${dll} was not produced.")
+            return
+        }
+        def destination = nativeResources.get().dir("assets/ingamecnl/native/windows-x86_64").asFile
+        destination.mkdirs()
+        copy {
+            from dll
+            into destination
+        }
+    }
+}
+
+sourceSets.main.resources.srcDir(nativeResources)
+processResources.dependsOn(tasks.named("buildNativeGrep"))
+
 dependencies {
     // We depend on Fabric Loader here to use the Fabric @Environment annotations,
     // which get remapped to the correct annotations on each platform.

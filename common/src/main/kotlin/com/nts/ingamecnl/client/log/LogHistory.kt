@@ -16,6 +16,9 @@ internal class LogHistory(
 
     private val records = ArrayDeque<LogRecord>()
     private val visible = ArrayDeque<LogRecord>()
+    private val pages = ArrayDeque<LogPage>()
+    private var openPage: LogPageBuilder? = null
+    private var nextPageNumber = 0L
     private var characters = 0L
     private var evictedCount = 0L
     private var visibleCountTotal = 0L
@@ -48,6 +51,7 @@ internal class LogHistory(
     fun accept(pending: PendingRecord): Boolean {
         val record = pending.record
         records.addLast(record)
+        appendToPage(record)
         characters += record.textSize
         evictOverflow()
         val visibleNow = pending.filter.matches(record)
@@ -60,6 +64,15 @@ internal class LogHistory(
         return visibleNow
     }
 
+    private fun appendToPage(record: LogRecord) {
+        val page = openPage ?: LogPageBuilder(nextPageNumber++).also { openPage = it }
+        page.add(record)
+        if (page.count == LOG_PAGE_SIZE) {
+            pages.addLast(page.build())
+            openPage = null
+        }
+    }
+
     private fun evictOverflow() {
         while (records.size > 1 &&
             (records.size.toLong() > recordCapacity || characters > characterCapacity)
@@ -69,6 +82,28 @@ internal class LogHistory(
             if (removed.sequence > lastEvictedSequence) lastEvictedSequence = removed.sequence
             evictedCount++
         }
+        prunePages()
+    }
+
+    private fun prunePages() {
+        while (pages.isNotEmpty() && pages.first().lastSequence <= lastEvictedSequence) {
+            pages.removeFirst()
+        }
+        if ((openPage?.lastSequence ?: -1L) <= lastEvictedSequence) {
+            openPage = null
+        }
+    }
+
+    internal fun snapshot(): LogSnapshot {
+        openPage?.let {
+            if (it.count > 0) pages.addLast(it.build())
+            openPage = null
+        }
+        return LogSnapshot(
+            pages = pages.toList(),
+            fromSequence = lastEvictedSequence + 1,
+            toSequence = records.lastOrNull()?.sequence ?: -1L,
+        )
     }
 
     private fun pruneVisible() {

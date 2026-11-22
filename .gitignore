@@ -41,3 +41,4 @@ build/
 # Native Lib
 /**/**/**/.zig-cache
 /**/**/**/zig-out
+/**/**/**/zig-pkg

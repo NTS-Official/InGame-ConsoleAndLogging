@@ -3,6 +3,10 @@ package com.nts.ingamecnl.client.gui
 import com.nts.ingamecnl.client.ConsoleClient
 import com.nts.ingamecnl.client.command.CommandAvailability
 import com.nts.ingamecnl.client.config.ConfigFilterSync
+import com.nts.ingamecnl.client.grep.GrepCommandError
+import com.nts.ingamecnl.client.grep.GrepCommandParse
+import com.nts.ingamecnl.client.grep.GrepView
+import com.nts.ingamecnl.client.grep.parseGrepCommand
 import com.nts.ingamecnl.config.ConsoleConfig
 import com.nts.ingamecnl.client.log.AutoSplashCommand
 import com.nts.ingamecnl.client.log.AutoSplashCommandError
@@ -47,6 +51,7 @@ internal class ConsoleScreen(
     private var historyIndex = -1
     private var historyDraft = ""
     internal val logView: LogView by lazy { LogView(font) }
+    internal val grepView: GrepView by lazy { GrepView(font) }
     private val commandView: CommandView by lazy { CommandView(font, state.commandTranscript) }
 
     internal val panelHeight: Int
@@ -69,7 +74,11 @@ internal class ConsoleScreen(
     internal val acceptsTextInput: Boolean
         get() = !overlayOnly && state.mode != ConsoleMode.VIEW_ONLY
     internal val isScrolled: Boolean
-        get() = if (state.mode == ConsoleMode.COMMAND) commandView.isScrolled else logView.isScrolled
+        get() = when {
+            grepView.isOpen -> true
+            state.mode == ConsoleMode.COMMAND -> commandView.isScrolled
+            else -> logView.isScrolled
+        }
     internal val modeSwitchHint: String
         get() {
             val switchKey = ConsoleClient.switchModeLabel()
@@ -120,6 +129,7 @@ internal class ConsoleScreen(
     }
 
     private fun selectMode(mode: ConsoleMode) {
+        grepView.close()
         if (mode == ConsoleMode.VIEW_ONLY) {
             ConsoleClient.enterViewOnly(previousScreen)
             return
@@ -182,6 +192,12 @@ internal class ConsoleScreen(
     }
 
     override fun keyPressed(event: KeyEvent): Boolean {
+        if (grepView.isOpen) {
+            val wasOpen = grepView.isOpen
+            grepView.handleKey(event)
+            if (wasOpen && !grepView.isOpen) setInitialFocus(input)
+            return true
+        }
         if (event.key() == GLFW.GLFW_KEY_TAB && event.hasShiftDown() &&
             (modeSwitchGesture == ModeSwitchGesture.READY || modeSwitchGesture == ModeSwitchGesture.HELD)
         ) {
@@ -225,6 +241,7 @@ internal class ConsoleScreen(
     }
 
     override fun keyReleased(event: KeyEvent): Boolean {
+        if (grepView.isOpen) return true
         if (event.key() == GLFW.GLFW_KEY_TAB && modeSwitchGesture == ModeSwitchGesture.HELD) {
             modeSwitchGesture = ModeSwitchGesture.READY
             return true
@@ -234,10 +251,10 @@ internal class ConsoleScreen(
     }
 
     override fun charTyped(event: CharacterEvent): Boolean =
-        transition.target == PanelTarget.COLLAPSED || super.charTyped(event)
+        grepView.isOpen || transition.target == PanelTarget.COLLAPSED || super.charTyped(event)
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        if (transition.target == PanelTarget.COLLAPSED) return true
+        if (grepView.isOpen || transition.target == PanelTarget.COLLAPSED) return true
         val top = repositionPanel(System.nanoTime())
         if (event.y() < 0 || event.y() >= top + panelHeight) return true
         val hint = logView.followHintBounds()
@@ -263,11 +280,12 @@ internal class ConsoleScreen(
         if (mouseY < top + 30 || mouseY > bottom - contentBottomInset) return true
         if (scrollY == 0.0) return true
         val delta = if (scrollY > 0) scrollY.toInt().coerceAtLeast(1) else scrollY.toInt().coerceAtMost(-1)
-        scrollByRecords(delta)
+        if (grepView.isOpen) grepView.scroll(-delta) else scrollByRecords(delta)
         return true
     }
 
     override fun onClose() {
+        grepView.close()
         if (overlayOnly || transition.target == PanelTarget.COLLAPSED) return
         val nowNanos = System.nanoTime()
         transition = PanelTransition(transition.fractionAt(nowNanos, slideDurationNanos), PanelTarget.COLLAPSED, nowNanos)
@@ -297,7 +315,9 @@ internal class ConsoleScreen(
     }
 
     internal fun scrollPage(up: Boolean) {
-        if (state.mode == ConsoleMode.COMMAND) {
+        if (grepView.isOpen) {
+            grepView.scroll(if (up) -1 else 1)
+        } else if (state.mode == ConsoleMode.COMMAND) {
             commandView.scrollPage(up, logViewWidth(), logViewportHeight())
         } else {
             logView.scrollPage(up, logViewWidth(), logViewportHeight())
@@ -305,11 +325,14 @@ internal class ConsoleScreen(
     }
 
     internal fun returnToBottom() {
+        if (grepView.isOpen) return
         if (state.mode == ConsoleMode.COMMAND) commandView.returnToBottom() else logView.returnToBottom()
     }
 
     private fun scrollByRecords(delta: Int) {
-        if (state.mode == ConsoleMode.COMMAND) {
+        if (grepView.isOpen) {
+            grepView.scroll(-delta)
+        } else if (state.mode == ConsoleMode.COMMAND) {
             commandView.scrollByLines(delta, logViewWidth(), logViewportHeight())
         } else {
             logView.scrollByRecords(delta, logViewWidth(), logViewportHeight())
@@ -317,10 +340,10 @@ internal class ConsoleScreen(
     }
 
     internal fun drawContent(graphics: GuiGraphicsExtractor, left: Int, top: Int, right: Int, bottom: Int) {
-        if (state.mode == ConsoleMode.COMMAND) {
-            commandView.draw(graphics, left, top, right, bottom)
-        } else {
-            logView.draw(graphics, left, top, right, bottom)
+        when {
+            grepView.isOpen -> grepView.draw(graphics, left, top, right, bottom)
+            state.mode == ConsoleMode.COMMAND -> commandView.draw(graphics, left, top, right, bottom)
+            else -> logView.draw(graphics, left, top, right, bottom)
         }
     }
 
@@ -408,6 +431,10 @@ internal class ConsoleScreen(
         if (text.isEmpty()) return
         state.logHistory.add(text)
         resetHistoryNavigation()
+        if (text.equals("grep", ignoreCase = true) || text.startsWith("grep ", ignoreCase = true)) {
+            submitGrepCommand(text)
+            return
+        }
         if (text.equals("autosplash", ignoreCase = true) || text.startsWith("autosplash ", ignoreCase = true)) {
             submitAutoSplashCommand(text)
             return
@@ -430,6 +457,44 @@ internal class ConsoleScreen(
                 input.value = ""
             }
         }
+    }
+
+    private fun submitGrepCommand(text: String) {
+        when (val parsed = parseGrepCommand(text)) {
+            is GrepCommandParse.Error -> {
+                feedback = grepCommandError(parsed.error, parsed.detail)
+                feedbackError = true
+            }
+            is GrepCommandParse.Parsed -> {
+                val snapshot = LogCapture.history.snapshot()
+                grepView.start(parsed.query, snapshot)
+                input.setFocused(false)
+                feedback = null
+                feedbackError = false
+                input.value = ""
+                state.draft = ""
+            }
+        }
+    }
+
+    private fun grepCommandError(error: GrepCommandError, detail: String?): Component = when (error) {
+        GrepCommandError.UNTERMINATED_QUOTE -> Component.translatable("console.ingamecnl.error.grep_quote")
+        GrepCommandError.UNEXPECTED_ARGUMENT ->
+            Component.translatable("console.ingamecnl.error.grep_argument", detail ?: "")
+        GrepCommandError.UNKNOWN_OPTION ->
+            Component.translatable("console.ingamecnl.error.grep_option", detail ?: "")
+        GrepCommandError.MISSING_VALUE ->
+            Component.translatable("console.ingamecnl.error.grep_missing_value", detail ?: "")
+        GrepCommandError.DUPLICATE_OPTION ->
+            Component.translatable("console.ingamecnl.error.grep_duplicate", detail ?: "")
+        GrepCommandError.MISSING_KEYWORD -> Component.translatable("console.ingamecnl.error.grep_missing_keyword")
+        GrepCommandError.MISSING_LEVEL -> Component.translatable("console.ingamecnl.error.grep_missing_level")
+        GrepCommandError.EMPTY_KEYWORD -> Component.translatable("console.ingamecnl.error.grep_empty_keyword")
+        GrepCommandError.INVALID_LEVEL ->
+            Component.translatable("console.ingamecnl.error.invalid_level", detail ?: "")
+        GrepCommandError.INVALID_TIME ->
+            Component.translatable("console.ingamecnl.error.grep_time", detail ?: "")
+        GrepCommandError.START_AFTER_END -> Component.translatable("console.ingamecnl.error.grep_start_after_end")
     }
 
     private fun submitAutoSplashCommand(text: String) {

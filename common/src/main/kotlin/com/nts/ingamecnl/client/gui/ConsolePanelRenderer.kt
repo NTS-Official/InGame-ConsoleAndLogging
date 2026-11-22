@@ -128,14 +128,15 @@ internal object ConsolePanelRenderer {
         graphics.disableScissor()
     }
 
-    private fun statusText(screen: ConsoleScreen): String = when (screen.state.mode) {
-        ConsoleMode.LOG -> logStatusText()
-        ConsoleMode.COMMAND -> screen.commandStatusText()
-        ConsoleMode.VIEW_ONLY -> Component.translatable(screen.state.mode.statusKey).string
+    private fun statusText(screen: ConsoleScreen): String = when {
+        screen.grepView.isOpen -> screen.grepView.statusText()
+        screen.state.mode == ConsoleMode.LOG -> logStatusText()
+        screen.state.mode == ConsoleMode.COMMAND -> screen.commandStatusText()
+        else -> Component.translatable(screen.state.mode.statusKey).string
     }
 
     private fun followHint(screen: ConsoleScreen): Component? {
-        if (screen.state.mode != ConsoleMode.LOG) return null
+        if (screen.grepView.isOpen || screen.state.mode != ConsoleMode.LOG) return null
         val count = screen.logView.newSinceScroll()
         if (count <= 0) return null
         return Component.translatable(
