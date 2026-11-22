@@ -4,23 +4,50 @@ architectury {
 
 def nativeProject = layout.projectDirectory.dir("src/native")
 def nativeResources = layout.buildDirectory.dir("generated/native-resources")
+def androidLibcConfig = layout.buildDirectory.file("generated/android-libc.txt")
+def hostTag = System.getProperty("os.name").toLowerCase().contains("windows")
+    ? "windows-x86_64"
+    : (System.getProperty("os.name").toLowerCase().contains("mac") ? "darwin-x86_64" : "linux-x86_64")
+def findAndroidNdk = {
+    def candidates = []
+    ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"].each { name ->
+        def value = System.getenv(name)
+        if (value) {
+            candidates << new File(value)
+        }
+    }
+    def sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    if (sdk) {
+        def ndkRoot = new File(sdk, "ndk")
+        def dirs = ndkRoot.isDirectory() ? ndkRoot.listFiles() : null
+        if (dirs != null) {
+            candidates.addAll(dirs.findAll { it.isDirectory() }.sort { it.name }.reverse())
+        }
+    }
+    candidates.find { it.isDirectory() }
+}
+def androidNdk = findAndroidNdk()
+def androidApi = 26
 def nativeTargets = [
     [zig: "x86_64-windows-gnu", dir: "windows-x86_64", subdir: "bin", file: "ingamecnl_grep.dll"],
     [zig: "aarch64-windows-gnu", dir: "windows-aarch64", subdir: "bin", file: "ingamecnl_grep.dll"],
     [zig: "x86_64-linux-gnu", dir: "linux-x86_64", subdir: "lib", file: "libingamecnl_grep.so"],
     [zig: "aarch64-linux-gnu", dir: "linux-aarch64", subdir: "lib", file: "libingamecnl_grep.so"],
+    [zig: "aarch64-linux-android", dir: "android-aarch64", subdir: "lib", file: "libingamecnl_grep.so", android: true],
     [zig: "x86_64-macos", dir: "macos-x86_64", subdir: "lib", file: "libingamecnl_grep.dylib"],
     [zig: "aarch64-macos", dir: "macos-aarch64", subdir: "lib", file: "libingamecnl_grep.dylib"],
 ]
 
 tasks.register("buildNativeGrep") {
     group = "build"
-    description = "Builds the optional comb grep libraries for Windows, Linux, and macOS."
+    description = "Builds the optional comb grep libraries for Windows, Linux, macOS, and Android arm64."
 
     inputs.files(fileTree(nativeProject) {
         include "build.zig", "build.zig.zon", "src/**"
     })
     inputs.property("targets", nativeTargets.toString())
+    inputs.property("androidNdk", androidNdk?.absolutePath ?: "")
+    inputs.property("androidApi", androidApi)
     outputs.dir(nativeResources)
 
     doLast {
@@ -41,10 +68,32 @@ tasks.register("buildNativeGrep") {
 
         nativeTargets.each { target ->
             def prefix = nativeProject.dir("zig-out/${target.zig}").asFile
-            def process = new ProcessBuilder(
-                "zig", "build", "-Drelease", "-Dtarget=${target.zig}",
-                "--prefix", prefix.absolutePath,
-            )
+            def command = ["zig", "build", "-Drelease", "-Dtarget=${target.zig}"]
+            if (target.android) {
+                if (androidNdk == null) {
+                    logger.warn("Skipping Android native grep: Android NDK is not installed.")
+                    return
+                }
+                def sysroot = new File(androidNdk, "toolchains/llvm/prebuilt/${hostTag}/sysroot")
+                def apiDir = new File(sysroot, "usr/lib/aarch64-linux-android/${androidApi}")
+                if (!apiDir.isDirectory()) {
+                    logger.warn("Skipping Android native grep: NDK sysroot not found at ${sysroot}.")
+                    return
+                }
+                def libcConfig = androidLibcConfig.get().asFile
+                libcConfig.parentFile.mkdirs()
+                libcConfig.text = """include_dir=${sysroot}/usr/include
+sys_include_dir=${sysroot}/usr/include/aarch64-linux-android
+cc_dir=${apiDir}
+crt_dir=${apiDir}
+msvc_lib_dir=
+kernel32_lib_dir=
+darwin_sdk_dir=
+"""
+                command.addAll(["--libc", libcConfig.absolutePath, "--sysroot", sysroot.absolutePath])
+            }
+            command.addAll(["--prefix", prefix.absolutePath])
+            def process = new ProcessBuilder(command.collect { it.toString() })
                 .directory(nativeProject.asFile)
                 .inheritIO()
                 .start()

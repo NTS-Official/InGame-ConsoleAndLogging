@@ -15,12 +15,12 @@
 - 阶段 2 接入 Log4j Appender、有界接收队列和原始历史。日志模式按接收序号显示 Loom 风格的日志行，支持自动换行、底部自动跟随、翻页、`End` 回底和新增记录计数。
 - 日志模式的 `filter level`、`filter keyword`、`filter reset` 与 `filter show` 已接入。筛选规则以入队顺序生效，已显示的记录保持原样，隐藏记录仍保留在原始历史中。
 - 日志模式的 `grep -k <关键词> -l <级别> [-t1 <开始>] [-t2 <结束>]` 查询提交时固定原始历史快照，在后台单线程按 1024 条分页扫描；结果按页发布，支持取消。结果只读、不插入后续日志、不触发自动展开；阅读区支持逐条/翻页/首尾/横向滚动与 q/Esc 关闭。
-- 构建在 `:common:processResources` 前调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 comb 库，并全部打入两个平台的发布 JAR；ASCII 字段按 64 条一批走原生扫描，非 ASCII、超批容量、平台不匹配或原生加载/调用失败时回退 JVM。
+- 构建在 `:common:processResources` 前调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 与 Android arm64 comb 库，并全部打入两个平台的发布 JAR；Android 目标需要 NDK、按 API 26 构建，缺少时跳过。ASCII 字段按 64 条一批走原生扫描，非 ASCII、超批容量、平台不匹配或原生加载/调用失败时回退 JVM。
 - 命令模式通过专用命令会话执行：主机本地直接使用内置服务端控制台源，非主机客户端经局域网能力探测与主机授权后转发请求。命令在服务端线程执行，语法错误与执行异常转为反馈，结果写入有界命令时间线；局域网授权支持总开关、白名单/黑名单与玩家名/IP 匹配。
 
 ## 阶段 2 验证
 
-`common` 的 Kotlin 编译、`fabric` 与 `neoforge` 的完整构建均已通过。Fabric 开发客户端可启动并显示默认仅查看叠加层、实时日志列表与筛选状态行，切换到日志模式后显示输入界面；Mod Menu 18.0.2 与 Cloth Config 26.1.154 均已加载，配置文件生成默认值。NeoForge 开发客户端通过 Kotlin for Forge 6.5.0 启动，加载 Cloth Config，配置入口已注册，未出现配置或元数据异常。配置页面由 Fabric Mod Menu 与 NeoForge 模组列表提供；颜色值已改为 RGB 并迁移旧配置。界面拆分与 Kotlin for Forge 改造后，Fabric 与 NeoForge 开发客户端均启动到标题界面；两端运行日志除 Mod Menu 在开发环境的图标提示外无异常。
+`common` 的 Kotlin 编译、`fabric` 与 `neoforge` 的完整构建均已通过。Fabric 开发客户端可启动并显示默认仅查看叠加层、实时日志列表与筛选状态行，切换到日志模式后显示输入界面；Mod Menu 18.0.2 与 Cloth Config 26.1.154 均已加载，配置文件生成默认值。NeoForge 开发客户端通过 Kotlin for Forge 6.5.0 启动，加载 Cloth Config，配置入口已注册，未出现配置或元数据异常。配置页面由 Fabric Mod Menu 与 NeoForge 模组列表提供；颜色值已改为 RGB 并迁移旧配置。界面拆分与 Kotlin for Forge 改造后，Fabric 与 NeoForge 开发客户端均启动到标题界面；两端运行日志除 Mod Menu 在开发环境的图标提示外无异常。Android arm64 已在 Android 17 / SM8850 / Fold Craft Launcher / Java 25 环境验证加载。
 
 待验证：
 
@@ -37,7 +37,7 @@
 - 仅查看模式首次展开的滑入动画、切换模式不重复播放动画，以及自动展开叠加层不显示标题。
 - 关闭再打开恢复上次模式与未提交输入，日志/命令历史互相独立，↑/↓ 边界与当前草稿恢复正确。
 - `grep` 查询只包含提交时历史、后续日志不插入、时间/级别/关键词交集正确，结果区滚动与 q/Esc 退出正常；查询期间历史淘汰不会让结果跳动。
-- Windows x86_64 的 comb 库能从两个发布 JAR 提取加载，ASCII 查询走原生且结果与 JVM 一致；缺少对应平台库、非 ASCII 关键词和原生调用失败时自动回退。Linux/macOS 库已交叉编译进 JAR，仍需在对应系统实际加载确认。
+- Linux、macOS 的 comb 库需在对应系统上实际加载确认；Windows x86_64 与 Android arm64 已验证加载，缺少对应平台库、非 ASCII 关键词和原生调用失败时自动回退。
 - GUI 缩放、窗口尺寸变化与中文文案的视觉检查。
 
 ## 下一步

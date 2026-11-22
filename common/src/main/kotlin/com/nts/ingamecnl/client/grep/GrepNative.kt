@@ -33,12 +33,30 @@ internal object GrepNative {
             "aarch64", "arm64" -> "aarch64"
             else -> return null
         }
+        if (isAndroid()) {
+            return if (arch == "aarch64") {
+                Platform("android-aarch64", "libingamecnl_grep.so")
+            } else {
+                null
+            }
+        }
         return when {
             os.startsWith("windows") -> Platform("windows-$arch", "ingamecnl_grep.dll")
             os.startsWith("linux") -> Platform("linux-$arch", "libingamecnl_grep.so")
             os.startsWith("mac") || os.startsWith("darwin") -> Platform("macos-$arch", "libingamecnl_grep.dylib")
             else -> null
         }
+    }
+
+    private fun isAndroid(): Boolean {
+        val vendor = buildString {
+            append(System.getProperty("java.vendor"))
+            append(' ')
+            append(System.getProperty("java.vm.vendor"))
+        }.lowercase()
+        return "android" in vendor ||
+            System.getenv("ANDROID_ROOT") != null ||
+            System.getenv("ANDROID_DATA") != null
     }
 
     private fun load(): State? {

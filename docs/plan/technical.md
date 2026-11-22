@@ -160,9 +160,9 @@ Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日�
 
 `LogHistory` 以 1024 条分页保存原始记录；`grep` 提交时封存尾页并取得 `LogSnapshot(pages, fromSequence, toSequence)`，之后仍在接收队列中的记录留给下一次查询。`GrepSearch` 用单线程守护执行器扫描快照，每页生成 64 位命中位图，按页累计命中数；`GrepResult` 通过二分页累计值定位任意命中条目。任务支持取消，结果通过客户端执行器回到界面，旧回调按代次丢弃。
 
-关键词与字段均为 ASCII 且原生库可用时，`GrepSearch` 按 64 条一批调用 `GrepNative` 的 comb 字面量扫描；非 ASCII 字段、超出批容量或原生加载/调用失败时回退 JVM 判定，同一查询不会混用两种大小写规则。`common/build.gradle` 在构建时用 Zig 交叉编译 Windows、Linux 与 macOS 的 x86_64/aarch64 动态库，打入发布 JAR；`GrepNative` 按 `os.name`、`os.arch` 选择对应资源，缺失或 ABI 不符时回退 JVM。
+关键词与字段均为 ASCII 且原生库可用时，`GrepSearch` 按 64 条一批调用 `GrepNative` 的 comb 字面量扫描；非 ASCII 字段、超出批容量或原生加载/调用失败时回退 JVM 判定，同一查询不会混用两种大小写规则。`common/build.gradle` 在构建时用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 与 Android arm64 动态库，打入发布 JAR；Android 目标使用 NDK 的 libc/sysroot、按 API 26 构建，缺少 NDK 时跳过该目标。`GrepNative` 按 `os.name`、`os.arch` 与 Android 运行环境选择对应资源，缺失、只支持 arm64、ABI 不符或 Android JVM 不提供 FFM 时回退 JVM。
 
-`GrepView` 只读展示结果，顶部为查询条件与快照时间范围，底部为当前位置；支持逐条/翻页/首尾/横向滚动与 q/Esc 退出。结果不插入后续日志、不触发自动展开，历史淘汰不会改变已封存页面。原生后端仍未做并行分块和定量选路；六个平台的库已完成交叉构建，Windows x86_64 完成独立 FFM 调用验证，Linux/macOS 与客户端内查询仍待运行确认。[grep 历史搜索架构](grep.md)记录后续步骤。
+`GrepView` 只读展示结果，顶部为查询条件与快照时间范围，底部为当前位置；支持逐条/翻页/首尾/横向滚动与 q/Esc 退出。结果不插入后续日志、不触发自动展开，历史淘汰不会改变已封存页面。原生后端仍未做并行分块和定量选路；七个平台的库已完成交叉构建，Windows x86_64 完成独立 FFM 调用验证，Android arm64 已在 Android 17 / SM8850 / Fold Craft Launcher / Java 25 环境验证，Linux/macOS 与客户端内查询仍待运行确认。[grep 历史搜索架构](grep.md)记录后续步骤。
 
 ## 后续阶段：服务端会话与命令反馈
 

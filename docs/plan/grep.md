@@ -2,7 +2,7 @@
 
 阶段 3 在客户端搜索本次启动仍保留的日志。日志正文由客户端线程追加和淘汰；提交查询时固定记录范围，后台按页扫描，ASCII 字段可经 Java FFM 调用 Zig comb 加速。搜索期间的堆分配目标是每扫描一条记录、每增加一个命中均为 0 B。一次命令解析、任务提交和屏幕可见行可以有少量分配。命令语法与阅读区按键见[主计划](README.md#搜索结果阅读区)。
 
-当前实现：JVM 单线程扫描是完整路径；发布 JAR 附带 Windows、Linux、macOS 的 x86_64/aarch64 comb 库，可用时按 64 条一批走原生扫描，非 ASCII、超批容量、加载或调用失败均回退 JVM。分块并行尚未接入。
+当前实现：JVM 单线程扫描是完整路径；发布 JAR 附带 Windows、Linux、macOS 的 x86_64/aarch64 与 Android arm64 的 comb 库，可用时按 64 条一批走原生扫描，非 ASCII、超批容量、加载或调用失败均回退 JVM。Android 按 API 26 构建，需要 JVM 提供 `java.lang.foreign`；没有 FFM 时直接走 JVM。分块并行尚未接入。
 
 ## 接入位置与数据流
 
@@ -22,7 +22,7 @@ flowchart LR
     M --> R[按页序发布位图和阅读索引]
 ```
 
-`common` 的客户端日志包提供一个查询入口，负责解析后的查询、线程调度和结果所有权。`LogHistory` 负责登记有序页范围，向搜索和实时视图提供按页读取的入口。GUI 只提交、取消、读取状态和当前页。FFM 适配器仅承担数据布局、加载和调用。两个加载器复用这一实现。Zig 构建入口在 [common/src/native](../../common/src/native/build.zig)，Gradle 在 `:common:processResources` 前按六个目标运行 `zig build -Drelease -Dtarget=<triple>`，把各平台动态库复制到共享资源。
+`common` 的客户端日志包提供一个查询入口，负责解析后的查询、线程调度和结果所有权。`LogHistory` 负责登记有序页范围，向搜索和实时视图提供按页读取的入口。GUI 只提交、取消、读取状态和当前页。FFM 适配器仅承担数据布局、加载和调用。两个加载器复用这一实现。Zig 构建入口在 [common/src/native](../../common/src/native/build.zig)，Gradle 在 `:common:processResources` 前按七个目标运行 `zig build -Drelease -Dtarget=<triple>`，把各平台动态库复制到共享资源；Android arm64 目标使用 NDK 的 libc 与 sysroot，按 API 26 构建。
 
 ## 动态尾部与静态分块
 
@@ -92,4 +92,4 @@ int32_t igcnl_grep_scan_ascii_v1(
 2. **单独验证 Zig 边界。** 原生目录已通过 `zig fetch` 固定 comb 提交 `02546de0e1542acf66ac3757166326718a57fda0` 与内容哈希，`build.zig` 构建动态库并仅导出 v1 入口；`zig build test` 覆盖版本、命中合并和越界描述，独立 FFM 进程验证符号、布局与返回码。后续仍需补长度溢出、未知状态及非 ASCII 混合字段的系统性畸形输入测试。[本地包配置](../../common/src/native/build.zig.zon) · [上游包配置](https://git.urverk.org/urverk/comb/src/commit/02546de0e1542acf66ac3757166326718a57fda0/build.zig.zon)
 3. **接入分块并行并定量选路。** 当前是 JVM/FFM 单线程，未做分块并行。对同一份记录回放比较 JVM 单线程、JVM 分块、FFM 单线程、FFM 分块四组，逐条比对命中序号与顺序。分别回放空历史、短历史、默认文本容量及接近 2 GiB 的历史；用短记录和空消息单独压测条数。通过构造页号和计数测试跨越 Int.MAX_VALUE、逼近 Long.MAX_VALUE、配置缩容和预算拒绝。负载覆盖短 ASCII、中文混合、最长堆栈、全命中、零命中、反复替换、打开旧结果同时持续写满历史。统计冷启动和预热后的查询 p50/p95/p99、取消延迟、客户端提交耗时、帧时间、实际复制字节、每线程分配和峰值堆外内存。JFR 加 GC 日志对比相同回放下关闭 grep 的基准；用分配计数测热循环，单列命令和 UI 分配。
 4. **确定可发布参数。** 建议初始目标为满容量提交 p99 ≤ 1 ms、扫描循环 0 B/记录且无逐命中对象分配、取消 p99 ≤ 50 ms。持续满负荷运行并反复关闭阅读区后，被保留的页数、结果索引段数、原生工作区数和存活堆回到预期水平；以固定硬件、JDK、收集器和堆大小对比帧时间与 GC 暂停 p99。记录机器、样本量、预热和最坏样本。这些是待测目标。只在端到端 p95 改善且帧时间与分配达标的负载区间启用原生或多线程，其他区间保留 JVM 单线程。
-5. **验证两个加载器的发布 JAR。** Gradle 调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 动态库，并作为共享资源打入两个平台的发布 JAR；构建机没有 Zig 时跳过原生资源，运行时自动回退 JVM。Windows x86_64 已完成独立 FFM 调用验证；Linux、macOS 产物需在对应系统上实际加载确认。FFM 加载失败、ABI 错配和禁止原生访问时同一查询走 JVM。运行两端 Wrapper 构建，实际启动客户端查询、关闭并退出游戏。阅读区焦点、滚动位置和自动预览由使用者在游戏中确认。[项目构建与运行](../usage.md)
+5. **验证两个加载器的发布 JAR。** Gradle 调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 与 Android arm64 动态库，并作为共享资源打入两个平台的发布 JAR；Android 目标需要本机 NDK，缺少 NDK 时跳过该目标；构建机没有 Zig 时跳过全部原生资源，运行时自动回退 JVM。Windows x86_64 已完成独立 FFM 调用验证；Android arm64 已在 Android 17 / SM8850 / Fold Craft Launcher / Java 25 环境验证；Linux 与 macOS 产物仍需在对应系统上实际加载确认。FFM 加载失败、ABI 错配、禁止原生访问或 JVM 不提供 FFM 时同一查询走 JVM。运行两端 Wrapper 构建，实际启动客户端查询、关闭并退出游戏。阅读区焦点、滚动位置和自动预览由使用者在游戏中确认。[项目构建与运行](../usage.md)

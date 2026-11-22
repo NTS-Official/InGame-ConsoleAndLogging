@@ -97,7 +97,8 @@ internal class GrepTask internal constructor(
     internal fun run(): GrepOutcome {
         val keyword = query.keyword
         val asciiKeyword = keyword.all { it.code < 128 }
-        return if (GrepNative.available && asciiKeyword) {
+        val nativeAvailable = runCatching { GrepNative.available }.getOrDefault(false)
+        return if (nativeAvailable && asciiKeyword) {
             try {
                 runNative()
             } catch (error: Throwable) {
@@ -176,17 +177,22 @@ internal class GrepTask internal constructor(
                         if (query.endMillis != null && record.timeMillis > query.endMillis) continue
 
                         val message = record.message
-                        var matched = if (message.all { it.code < 128 }) {
-                            !batch.add(message.toByteArray(Charsets.US_ASCII), slot)
+                        var matched = false
+                        if (message.all { it.code < 128 }) {
+                            if (!batch.add(message.toByteArray(Charsets.US_ASCII), slot)) {
+                                matched = query.matches(record)
+                            }
                         } else {
-                            query.matches(record)
+                            matched = query.matches(record)
                         }
                         val throwable = record.throwableText
                         if (!matched && throwable != null) {
-                            matched = if (throwable.all { it.code < 128 }) {
-                                !batch.add(throwable.toByteArray(Charsets.US_ASCII), slot)
+                            if (throwable.all { it.code < 128 }) {
+                                if (!batch.add(throwable.toByteArray(Charsets.US_ASCII), slot)) {
+                                    matched = query.matches(record)
+                                }
                             } else {
-                                query.matches(record)
+                                matched = query.matches(record)
                             }
                         }
                         if (matched) {
