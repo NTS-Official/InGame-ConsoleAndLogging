@@ -12,7 +12,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 internal object GrepNative {
-    private const val RESOURCE = "assets/ingamecnl/native/windows-x86_64/ingamecnl_grep.dll"
+    private data class Platform(val directory: String, val library: String)
+
+    private val platform: Platform? = currentPlatform()
     private const val ABI_VERSION = 1
     private const val TEXT_CAPACITY = 64 * 1024
     private const val FIELD_CAPACITY = 1024
@@ -24,13 +26,28 @@ internal object GrepNative {
 
     fun workspace(): Workspace? = state?.let { Workspace(it) }
 
+    private fun currentPlatform(): Platform? {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = when (System.getProperty("os.arch").lowercase()) {
+            "amd64", "x86_64" -> "x86_64"
+            "aarch64", "arm64" -> "aarch64"
+            else -> return null
+        }
+        return when {
+            os.startsWith("windows") -> Platform("windows-$arch", "ingamecnl_grep.dll")
+            os.startsWith("linux") -> Platform("linux-$arch", "libingamecnl_grep.so")
+            os.startsWith("mac") || os.startsWith("darwin") -> Platform("macos-$arch", "libingamecnl_grep.dylib")
+            else -> null
+        }
+    }
+
     private fun load(): State? {
-        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return null
-        if (!System.getProperty("os.arch").equals("amd64", ignoreCase = true)) return null
-        val stream = GrepNative::class.java.getResourceAsStream("/$RESOURCE") ?: return null
+        val platform = platform ?: return null
+        val resource = "assets/ingamecnl/native/${platform.directory}/${platform.library}"
+        val stream = GrepNative::class.java.getResourceAsStream("/$resource") ?: return null
         return try {
             val directory = Files.createTempDirectory("ingamecnl-native")
-            val file = directory.resolve("ingamecnl_grep.dll")
+            val file = directory.resolve(platform.library)
             stream.use { Files.copy(it, file, StandardCopyOption.REPLACE_EXISTING) }
             val arena = Arena.ofShared()
             val linker = Linker.nativeLinker()

@@ -118,7 +118,7 @@ Fabric 安装 Mod Menu 后，从模组列表中本模组的配置按钮进入 Cl
 
 依赖变更后重新构建两端。Fabric 发布依赖 Fabric Language Kotlin；NeoForge 发布依赖 Kotlin for Forge，不打包 Kotlin 标准库。不要将 Kotlin 标准库另外展开进平台 JAR。
 
-Windows x86_64 构建会在 `:common:processResources` 前调用 `zig build -Drelease` 生成 comb 加速库并打入发布 JAR；需要 [Zig](https://ziglang.org/) 0.17 或更高版本，`common/src/native` 的 `build.zig.zon` 固定 comb 提交。没有 Zig 时构建跳过原生库，`grep` 自动使用 JVM 扫描。其他平台当前不附带原生库。
+构建会在 `:common:processResources` 前调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 comb 加速库并打入发布 JAR；需要 [Zig](https://ziglang.org/) 0.17 或更高版本，`common/src/native` 的 `build.zig.zon` 固定 comb 提交。没有 Zig 时跳过全部原生库，`grep` 自动使用 JVM 扫描；运行时按操作系统与架构选择对应库，缺失或加载失败时同样回退。
 
 ## 阶段 1 与阶段 2 操作检查
 

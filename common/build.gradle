@@ -4,44 +4,63 @@ architectury {
 
 def nativeProject = layout.projectDirectory.dir("src/native")
 def nativeResources = layout.buildDirectory.dir("generated/native-resources")
+def nativeTargets = [
+    [zig: "x86_64-windows-gnu", dir: "windows-x86_64", subdir: "bin", file: "ingamecnl_grep.dll"],
+    [zig: "aarch64-windows-gnu", dir: "windows-aarch64", subdir: "bin", file: "ingamecnl_grep.dll"],
+    [zig: "x86_64-linux-gnu", dir: "linux-x86_64", subdir: "lib", file: "libingamecnl_grep.so"],
+    [zig: "aarch64-linux-gnu", dir: "linux-aarch64", subdir: "lib", file: "libingamecnl_grep.so"],
+    [zig: "x86_64-macos", dir: "macos-x86_64", subdir: "lib", file: "libingamecnl_grep.dylib"],
+    [zig: "aarch64-macos", dir: "macos-aarch64", subdir: "lib", file: "libingamecnl_grep.dylib"],
+]
 
 tasks.register("buildNativeGrep") {
     group = "build"
-    description = "Builds the optional comb grep library for the current platform."
+    description = "Builds the optional comb grep libraries for Windows, Linux, and macOS."
 
     inputs.files(fileTree(nativeProject) {
         include "build.zig", "build.zig.zon", "src/**"
     })
+    inputs.property("targets", nativeTargets.toString())
     outputs.dir(nativeResources)
 
     doLast {
-        if (!System.getProperty("os.name").toLowerCase().contains("windows")) {
-            logger.lifecycle("Skipping native grep: only Windows x86_64 is packaged.")
-            return
-        }
+        delete(nativeResources.get().asFile)
         try {
-            def process = new ProcessBuilder("zig", "build", "-Drelease")
+            def probe = new ProcessBuilder("zig", "version")
                 .directory(nativeProject.asFile)
-                .inheritIO()
+                .redirectErrorStream(true)
                 .start()
-            if (process.waitFor() != 0) {
-                logger.warn("Skipping native grep: zig build exited with ${process.exitValue()}.")
+            if (probe.waitFor() != 0) {
+                logger.warn("Skipping native grep: zig is not available.")
                 return
             }
         } catch (Exception error) {
             logger.warn("Skipping native grep: ${error.message}")
             return
         }
-        def dll = nativeProject.file("zig-out/bin/ingamecnl_grep.dll").asFile
-        if (!dll.isFile()) {
-            logger.warn("Skipping native grep: ${dll} was not produced.")
-            return
-        }
-        def destination = nativeResources.get().dir("assets/ingamecnl/native/windows-x86_64").asFile
-        destination.mkdirs()
-        copy {
-            from dll
-            into destination
+
+        nativeTargets.each { target ->
+            def prefix = nativeProject.dir("zig-out/${target.zig}").asFile
+            def process = new ProcessBuilder(
+                "zig", "build", "-Drelease", "-Dtarget=${target.zig}",
+                "--prefix", prefix.absolutePath,
+            )
+                .directory(nativeProject.asFile)
+                .inheritIO()
+                .start()
+            if (process.waitFor() != 0) {
+                throw new GradleException("Native grep build failed for ${target.zig}.")
+            }
+            def source = new File(prefix, "${target.subdir}/${target.file}")
+            if (!source.isFile()) {
+                throw new GradleException("Native grep output missing for ${target.zig}: ${source}")
+            }
+            def destination = nativeResources.get().dir("assets/ingamecnl/native/${target.dir}").asFile
+            destination.mkdirs()
+            copy {
+                from source
+                into destination
+            }
         }
     }
 }
