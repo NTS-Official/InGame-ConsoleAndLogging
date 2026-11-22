@@ -37,3 +37,7 @@ build/
 # Minecraft
 **/run/
 **/build/
+
+# Native Lib
+/**/**/**/.zig-cache
+/**/**/**/zig-out

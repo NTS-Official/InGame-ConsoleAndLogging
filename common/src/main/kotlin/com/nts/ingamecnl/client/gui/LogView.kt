@@ -1,8 +1,8 @@
 package com.nts.ingamecnl.client.gui
 
-import com.nts.ingamecnl.client.config.ConsoleConfig
 import com.nts.ingamecnl.client.log.LogCapture
 import com.nts.ingamecnl.client.log.LogRecord
+import com.nts.ingamecnl.config.ConsoleConfig
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.network.chat.Component

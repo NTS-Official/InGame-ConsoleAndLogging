@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.client.log
 
+import com.nts.ingamecnl.log.LogLevel
+
 data class DisplayFilter(
     val level: LogLevel? = null,
     val keyword: String? = null,

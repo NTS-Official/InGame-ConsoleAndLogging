@@ -1,6 +1,6 @@
 modLoader = "kotlinforforge"
 loaderVersion = "[6.5.0,)"
-#issueTrackerURL = ""
+issueTrackerURL = "https://github.com/NTS-Official/InGame-ConsoleAndLogging/issues"
 license = "GPL-3.0-only"
 
 [[mods]]
@@ -11,7 +11,10 @@ authors = "NoTuring_Steve"
 description = '''
 An in-game logging viewer and command console with a adjustable overlay.
 '''
-logoFile = "assets/ingamecnl/icon_large.png"
+logoFile = "assets/ingamecnl/icon_large.png" # Deprecated when using newer version of neoforge
+# Replacement for newer version of neoforge.
+# iconFile = "assets/ingamecnl/icon.png"
+# bannerFile = "assets/ingamecnl/icon_large.png"
 
 [[dependencies.ingamecnl]]
 modId = "neoforge"

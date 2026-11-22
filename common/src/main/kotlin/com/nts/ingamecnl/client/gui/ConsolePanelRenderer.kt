@@ -1,8 +1,8 @@
 package com.nts.ingamecnl.client.gui
 
 import com.nts.ingamecnl.client.ConsoleClient
-import com.nts.ingamecnl.client.config.ConsoleConfig
 import com.nts.ingamecnl.client.log.LogCapture
+import com.nts.ingamecnl.config.ConsoleConfig
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.network.chat.Component
 import kotlin.math.roundToInt
@@ -21,7 +21,7 @@ internal object ConsolePanelRenderer {
 
         val contentTop = top + 30
         val contentBottom = bottom - screen.contentBottomInset
-        screen.logView.draw(graphics, 8, contentTop, (screen.width - 8).coerceAtLeast(9), contentBottom)
+        screen.drawContent(graphics, 8, contentTop, (screen.width - 8).coerceAtLeast(9), contentBottom)
 
         val statusY = bottom - 57
         val status = statusText(screen)
@@ -109,14 +109,33 @@ internal object ConsolePanelRenderer {
         graphics.disableScissor()
     }
 
-    private fun statusText(screen: ConsoleScreen): String = when {
-        screen.state.mode == ConsoleMode.LOG -> logStatusText()
-        screen.state.mode == ConsoleMode.COMMAND && !screen.commandAvailable ->
-            Component.translatable("console.ingamecnl.command.unavailable").string
-        else -> Component.translatable(screen.state.mode.statusKey).string
+    fun drawAutoSplash(screen: ConsoleScreen, graphics: GuiGraphicsExtractor) {
+        val top = ((screen.transition.fractionAt(System.nanoTime(), screen.slideDurationNanos) - 1f) *
+            screen.panelHeight).roundToInt()
+        val bottom = top + screen.panelHeight
+        if (bottom <= 0) return
+        graphics.enableScissor(0, 0, screen.width, bottom)
+        val alpha = ConsoleConfig.overlayAlpha() shl 24
+        graphics.fill(0, top, screen.width, bottom, alpha or 0x10151C)
+        graphics.fill(0, bottom - 1, screen.width, bottom, alpha or 0x526176)
+        screen.logView.draw(
+            graphics,
+            8,
+            top + 8,
+            (screen.width - 8).coerceAtLeast(9),
+            bottom - screen.contentBottomInset,
+        )
+        graphics.disableScissor()
+    }
+
+    private fun statusText(screen: ConsoleScreen): String = when (screen.state.mode) {
+        ConsoleMode.LOG -> logStatusText()
+        ConsoleMode.COMMAND -> screen.commandStatusText()
+        ConsoleMode.VIEW_ONLY -> Component.translatable(screen.state.mode.statusKey).string
     }
 
     private fun followHint(screen: ConsoleScreen): Component? {
+        if (screen.state.mode != ConsoleMode.LOG) return null
         val count = screen.logView.newSinceScroll()
         if (count <= 0) return null
         return Component.translatable(

@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.client.log
 
+import com.nts.ingamecnl.log.LogLevel
+
 sealed interface FilterCommand {
     data class SetLevel(val level: LogLevel) : FilterCommand
 

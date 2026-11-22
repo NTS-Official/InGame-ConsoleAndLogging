@@ -1,4 +1,4 @@
-package com.nts.ingamecnl.client.log
+package com.nts.ingamecnl.log
 
 import org.apache.logging.log4j.Level
 

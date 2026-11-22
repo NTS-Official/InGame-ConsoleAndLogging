@@ -1,12 +1,18 @@
 package com.nts.ingamecnl.client.gui
 
 import com.nts.ingamecnl.client.ConsoleClient
-import com.nts.ingamecnl.client.config.ConsoleConfig
+import com.nts.ingamecnl.client.command.CommandAvailability
+import com.nts.ingamecnl.client.config.ConfigFilterSync
+import com.nts.ingamecnl.config.ConsoleConfig
+import com.nts.ingamecnl.client.log.AutoSplashCommand
+import com.nts.ingamecnl.client.log.AutoSplashCommandError
+import com.nts.ingamecnl.client.log.AutoSplashCommandParse
 import com.nts.ingamecnl.client.log.FilterCommand
 import com.nts.ingamecnl.client.log.FilterCommandError
 import com.nts.ingamecnl.client.log.FilterCommandParse
 import com.nts.ingamecnl.client.log.LogCapture
 import com.nts.ingamecnl.client.log.apply
+import com.nts.ingamecnl.client.log.parseAutoSplashCommand
 import com.nts.ingamecnl.client.log.parseFilterCommand
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.Button
@@ -25,29 +31,45 @@ internal class ConsoleScreen(
     internal val state: ConsoleState,
     val previousScreen: Screen?,
     val overlayOnly: Boolean = false,
+    val autoSplash: Boolean = false,
+    initiallyExpanded: Boolean = false,
 ) : Screen(Component.translatable("console.ingamecnl.title")) {
     private var modeSwitchGesture = ModeSwitchGesture.READY
-    internal var transition = PanelTransition(0f, PanelTarget.EXPANDED, System.nanoTime())
+    internal var transition = PanelTransition(
+        if (initiallyExpanded) 1f else 0f,
+        PanelTarget.EXPANDED,
+        System.nanoTime(),
+    )
     internal lateinit var input: EditBox
     private lateinit var closeButton: Button
     internal var feedback: Component? = null
     internal var feedbackError = false
+    private var historyIndex = -1
+    private var historyDraft = ""
     internal val logView: LogView by lazy { LogView(font) }
+    private val commandView: CommandView by lazy { CommandView(font, state.commandTranscript) }
 
     internal val panelHeight: Int
-        get() = (height * (if (overlayOnly) ConsoleConfig.overlayHeightPercent() / 100f else 0.65f))
-            .toInt().coerceAtLeast(144).coerceAtMost(height)
+        get() {
+            val fraction = when {
+                autoSplash -> ConsoleConfig.autoSplashHeightPercent() / 100f
+                overlayOnly -> ConsoleConfig.overlayHeightPercent() / 100f
+                else -> 0.65f
+            }
+            return (height * fraction).toInt().coerceAtLeast(144).coerceAtMost(height)
+        }
     internal val slideDurationNanos: Long
-        get() = if (overlayOnly) ConsoleConfig.overlayAnimationNanos() else SLIDE_DURATION_NANOS
+        get() = if (overlayOnly || autoSplash) ConsoleConfig.overlayAnimationNanos() else SLIDE_DURATION_NANOS
     internal val contentBottomInset: Int
-        get() = if (overlayOnly) 34 else 64
+        get() = when {
+            autoSplash -> 12
+            overlayOnly -> 34
+            else -> 64
+        }
     internal val acceptsTextInput: Boolean
         get() = !overlayOnly && state.mode != ConsoleMode.VIEW_ONLY
-    internal val commandAvailable: Boolean
-        get() = minecraft.level != null && minecraft.connection != null &&
-            minecraft.singleplayerServer?.let {
-                it.isRunning && !it.isStopped && it.isReady
-            } == true
+    internal val isScrolled: Boolean
+        get() = if (state.mode == ConsoleMode.COMMAND) commandView.isScrolled else logView.isScrolled
     internal val modeSwitchHint: String
         get() {
             val switchKey = ConsoleClient.switchModeLabel()
@@ -74,7 +96,8 @@ internal class ConsoleScreen(
         input.setMaxLength(32767)
         input.value = state.draft
         input.setResponder { state.draft = it }
-        input.setHint(Component.translatable(state.mode.statusKey))
+        input.setHint(inputHint())
+        resetHistoryNavigation()
         repositionElements()
     }
 
@@ -105,7 +128,9 @@ internal class ConsoleScreen(
         input.value = state.draft
         feedback = null
         feedbackError = false
-        input.setHint(Component.translatable(state.mode.statusKey))
+        input.setHint(inputHint())
+        resetHistoryNavigation()
+        if (mode == ConsoleMode.COMMAND) commandView.returnToBottom()
         setInitialFocus(input)
     }
 
@@ -133,6 +158,10 @@ internal class ConsoleScreen(
         transition = PanelTransition(transition.fractionAt(nowNanos, slideDurationNanos), PanelTarget.COLLAPSED, nowNanos)
     }
 
+    fun resetTransition() {
+        transition = PanelTransition(0f, PanelTarget.EXPANDED, System.nanoTime())
+    }
+
     val isCollapsed: Boolean
         get() = transition.target == PanelTarget.COLLAPSED &&
             transition.fractionAt(System.nanoTime(), slideDurationNanos) == 0f
@@ -142,7 +171,6 @@ internal class ConsoleScreen(
             transition.fractionAt(System.nanoTime(), slideDurationNanos) == 0f
         ) {
             if (minecraft.screen === this) minecraft.setScreen(previousScreen)
-            state.mode = ConsoleMode.VIEW_ONLY
             return
         }
         previousScreen?.tick()
@@ -171,14 +199,13 @@ internal class ConsoleScreen(
             return true
         }
         if (transition.target == PanelTarget.COLLAPSED) return true
+        if (input.isFocused && event.key() == GLFW.GLFW_KEY_UP && navigateHistory(-1)) return true
+        if (input.isFocused && event.key() == GLFW.GLFW_KEY_DOWN && navigateHistory(1)) return true
         if (input.isFocused && (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER)) {
             when (state.mode) {
                 ConsoleMode.VIEW_ONLY -> Unit
                 ConsoleMode.LOG -> submitLogCommand()
-                ConsoleMode.COMMAND -> {
-                    feedback = Component.translatable("console.ingamecnl.submit.command_unavailable")
-                    feedbackError = false
-                }
+                ConsoleMode.COMMAND -> submitServerCommand()
             }
             return true
         }
@@ -190,7 +217,7 @@ internal class ConsoleScreen(
             scrollPage(false)
             return true
         }
-        if (ConsoleClient.goToBottomKey()?.matches(event) == true && logView.isScrolled) {
+        if (ConsoleClient.goToBottomKey()?.matches(event) == true && isScrolled) {
             returnToBottom()
             return true
         }
@@ -256,6 +283,10 @@ internal class ConsoleScreen(
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, delta: Float) {
+        if (autoSplash) {
+            ConsolePanelRenderer.drawAutoSplash(this, graphics)
+            return
+        }
         if (overlayOnly) {
             ConsolePanelRenderer.drawOverlay(this, graphics)
             return
@@ -266,27 +297,124 @@ internal class ConsoleScreen(
     }
 
     internal fun scrollPage(up: Boolean) {
-        logView.scrollPage(up, logViewWidth(), logViewportHeight())
+        if (state.mode == ConsoleMode.COMMAND) {
+            commandView.scrollPage(up, logViewWidth(), logViewportHeight())
+        } else {
+            logView.scrollPage(up, logViewWidth(), logViewportHeight())
+        }
     }
 
     internal fun returnToBottom() {
-        logView.returnToBottom()
+        if (state.mode == ConsoleMode.COMMAND) commandView.returnToBottom() else logView.returnToBottom()
     }
 
     private fun scrollByRecords(delta: Int) {
-        logView.scrollByRecords(delta, logViewWidth(), logViewportHeight())
+        if (state.mode == ConsoleMode.COMMAND) {
+            commandView.scrollByLines(delta, logViewWidth(), logViewportHeight())
+        } else {
+            logView.scrollByRecords(delta, logViewWidth(), logViewportHeight())
+        }
     }
+
+    internal fun drawContent(graphics: GuiGraphicsExtractor, left: Int, top: Int, right: Int, bottom: Int) {
+        if (state.mode == ConsoleMode.COMMAND) {
+            commandView.draw(graphics, left, top, right, bottom)
+        } else {
+            logView.draw(graphics, left, top, right, bottom)
+        }
+    }
+
+    internal fun commandStatusText(): String = when (ConsoleClient.commandAvailability()) {
+        CommandAvailability.LOCAL ->
+            Component.translatable("console.ingamecnl.command.status.local").string
+        CommandAvailability.REMOTE ->
+            Component.translatable("console.ingamecnl.command.status.remote").string
+        CommandAvailability.PENDING ->
+            Component.translatable("console.ingamecnl.command.status.pending").string
+        CommandAvailability.UNAVAILABLE ->
+            Component.translatable("console.ingamecnl.command.unavailable").string
+    }
+
+    private fun inputHint(): Component = Component.translatable(
+        if (state.mode == ConsoleMode.COMMAND) "console.ingamecnl.input.command"
+        else state.mode.statusKey,
+    )
 
     private fun logViewWidth(): Int = (width - 16).coerceAtLeast(1)
 
     private fun logViewportHeight(): Int = (panelHeight - 30 - contentBottomInset).coerceAtLeast(1)
 
+    private fun navigateHistory(direction: Int): Boolean {
+        val history = when (state.mode) {
+            ConsoleMode.LOG -> state.logHistory
+            ConsoleMode.COMMAND -> state.commandHistory
+            ConsoleMode.VIEW_ONLY -> return false
+        }
+        if (history.size == 0) return false
+        if (direction < 0) {
+            if (historyIndex == -1) {
+                historyDraft = input.value
+                historyIndex = history.size - 1
+            } else if (historyIndex > 0) {
+                historyIndex--
+            } else {
+                return true
+            }
+        } else {
+            if (historyIndex == -1) return false
+            if (historyIndex < history.size - 1) {
+                historyIndex++
+            } else {
+                historyIndex = -1
+                applyHistoryValue(historyDraft)
+                return true
+            }
+        }
+        applyHistoryValue(history[historyIndex])
+        return true
+    }
+
+    private fun applyHistoryValue(value: String) {
+        input.value = value
+        state.draft = value
+        input.setCursorPosition(value.length)
+    }
+
+    private fun resetHistoryNavigation() {
+        historyIndex = -1
+        historyDraft = ""
+    }
+
+    private fun submitServerCommand() {
+        val text = input.value.trim()
+        if (text.isEmpty()) return
+        state.commandHistory.add(text)
+        resetHistoryNavigation()
+        if (!ConsoleClient.submitCommand(text)) {
+            feedback = Component.translatable("console.ingamecnl.command.unavailable")
+            feedbackError = true
+            return
+        }
+        state.commandTranscript.addInput(text)
+        commandView.returnToBottom()
+        input.value = ""
+        state.draft = ""
+        feedback = null
+        feedbackError = false
+    }
+
     private fun submitLogCommand() {
         val text = input.value.trim()
         if (text.isEmpty()) return
+        state.logHistory.add(text)
+        resetHistoryNavigation()
+        if (text.equals("autosplash", ignoreCase = true) || text.startsWith("autosplash ", ignoreCase = true)) {
+            submitAutoSplashCommand(text)
+            return
+        }
         when (val parsed = parseFilterCommand(text)) {
             is FilterCommandParse.Error -> {
-                feedback = commandError(parsed)
+                feedback = commandError(parsed.error, parsed.detail)
                 feedbackError = true
             }
             is FilterCommandParse.Parsed -> {
@@ -295,11 +423,33 @@ internal class ConsoleScreen(
                     feedback = Component.literal(logStatusText())
                 } else {
                     val filter = LogCapture.filter.apply(command) ?: return
-                    ConsoleConfig.applyFilter(filter)
+                    ConfigFilterSync.apply(filter)
                     feedback = confirmation(command)
                 }
                 feedbackError = false
                 input.value = ""
+            }
+        }
+    }
+
+    private fun submitAutoSplashCommand(text: String) {
+        when (val parsed = parseAutoSplashCommand(text)) {
+            is AutoSplashCommandParse.Error -> {
+                feedback = autoSplashCommandError(parsed.error)
+                feedbackError = true
+            }
+            is AutoSplashCommandParse.Parsed -> {
+                when (val command = parsed.command) {
+                    is AutoSplashCommand.SetKeyword -> {
+                        ConsoleConfig.setAutoSplashKeyword(command.keyword)
+                        feedback = Component.translatable(
+                            "console.ingamecnl.autosplash.set.keyword",
+                            command.keyword,
+                        )
+                        feedbackError = false
+                        input.value = ""
+                    }
+                }
             }
         }
     }
@@ -325,16 +475,25 @@ internal class ConsoleScreen(
         return "$filterText · $counters"
     }
 
-    private fun commandError(error: FilterCommandParse.Error): Component = when (error.error) {
+    private fun commandError(error: FilterCommandError, detail: String? = null): Component = when (error) {
         FilterCommandError.UNKNOWN_COMMAND -> Component.translatable("console.ingamecnl.error.unknown_command")
         FilterCommandError.MISSING_SUBCOMMAND -> Component.translatable("console.ingamecnl.error.missing_subcommand")
         FilterCommandError.UNKNOWN_SUBCOMMAND -> Component.translatable("console.ingamecnl.error.unknown_subcommand")
         FilterCommandError.MISSING_LEVEL -> Component.translatable("console.ingamecnl.error.missing_level")
         FilterCommandError.INVALID_LEVEL ->
-            Component.translatable("console.ingamecnl.error.invalid_level", error.detail ?: "")
+            Component.translatable("console.ingamecnl.error.invalid_level", detail ?: "")
         FilterCommandError.MISSING_KEYWORD -> Component.translatable("console.ingamecnl.error.missing_keyword")
         FilterCommandError.TOO_MANY_ARGUMENTS ->
             Component.translatable("console.ingamecnl.error.too_many_arguments")
+    }
+
+    private fun autoSplashCommandError(error: AutoSplashCommandError): Component = when (error) {
+        AutoSplashCommandError.MISSING_SUBCOMMAND ->
+            Component.translatable("console.ingamecnl.error.autosplash_missing_subcommand")
+        AutoSplashCommandError.UNKNOWN_SUBCOMMAND ->
+            Component.translatable("console.ingamecnl.error.autosplash_unknown_subcommand")
+        AutoSplashCommandError.MISSING_KEYWORD ->
+            Component.translatable("console.ingamecnl.error.autosplash_missing_keyword")
     }
 
     private fun confirmation(command: FilterCommand): Component = when (command) {

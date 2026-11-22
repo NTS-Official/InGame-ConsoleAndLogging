@@ -1,5 +1,6 @@
 package com.nts.ingamecnl.client.log
 
+import com.nts.ingamecnl.log.LogLevel
 import dev.architectury.event.events.client.ClientTickEvent
 import net.minecraft.client.Minecraft
 import org.apache.logging.log4j.Level
@@ -23,6 +24,8 @@ object LogCapture {
     internal val history = LogHistory()
     private var installed = false
 
+    internal var onVisibleRecord: (LogRecord) -> Unit = {}
+
     val filter: DisplayFilter
         get() = inbox.filter()
 
@@ -40,6 +43,10 @@ object LogCapture {
 
     fun setFilter(filter: DisplayFilter) {
         inbox.updateFilter(filter)
+    }
+
+    fun setHistoryLimits(recordLimit: Long, textLimit: Long) {
+        history.configure(recordLimit, textLimit)
     }
 
     private fun installAppender() {
@@ -62,7 +69,8 @@ object LogCapture {
         var accepted = 0
         while (accepted < DRAIN_RECORD_BUDGET) {
             val pending = inbox.poll() ?: break
-            history.accept(pending)
+            val visible = history.accept(pending)
+            if (visible) onVisibleRecord(pending.record)
             accepted++
             if (accepted and 7 == 0 && System.nanoTime() >= deadline) break
         }

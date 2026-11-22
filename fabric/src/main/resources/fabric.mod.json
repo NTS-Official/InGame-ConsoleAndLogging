@@ -8,8 +8,8 @@
     "NoTuring_Steve"
   ],
   "contact": {
-    "homepage": "https://fabricmc.net/",
-    "sources": "https://github.com/FabricMC/fabric-example-mod"
+    "homepage": "",
+    "sources": "https://github.com/NTS-Official/InGame-ConsoleAndLogging"
   },
   "license": "GPL-3.0-only",
   "icon": "assets/ingamecnl/icon.png",
@@ -32,9 +32,9 @@
     "architectury": ">=20.1.16",
     "fabric-api": "*",
     "fabric-language-kotlin": ">=${fabric_language_kotlin_version}",
-    "cloth-config": ">=26.1.154"
+    "cloth-config": ">=26.1.154",
+    "modmenu": ">=18.0.2"
   },
   "suggests": {
-    "modmenu": ">=18.0.2"
   }
 }
