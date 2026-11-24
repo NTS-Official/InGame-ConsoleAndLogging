@@ -1,4 +1,5 @@
 package com.nts.ingamecnl.client.log
+import com.nts.ingamecnl.log.LogRecord
 
 internal data class PendingRecord(
     val record: LogRecord,

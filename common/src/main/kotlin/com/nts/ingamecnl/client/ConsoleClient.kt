@@ -11,8 +11,9 @@ import com.nts.ingamecnl.client.gui.ConsoleMode
 import com.nts.ingamecnl.client.gui.ConsoleScreen
 import com.nts.ingamecnl.client.gui.ConsoleState
 import com.nts.ingamecnl.client.log.LogCapture
-import com.nts.ingamecnl.client.log.LogRecord
+import com.nts.ingamecnl.log.LogRecord
 import com.nts.ingamecnl.command.CommandNetwork
+import com.nts.ingamecnl.command.CommandResultStatus
 import com.nts.ingamecnl.command.CommandSession
 import com.nts.ingamecnl.command.LocalCommandSession
 import com.nts.ingamecnl.config.ConsoleConfig
@@ -54,6 +55,7 @@ object ConsoleClient {
     private var autoSplashSilencedUntilNanos = 0L
     private var commandSession: CommandSession? = null
     private var commandServer: MinecraftServer? = null
+    private var serverLogSubscribed = false
 
     fun initialize() {
         if (toggleKeyMapping != null) return
@@ -66,6 +68,23 @@ object ConsoleClient {
         CommandNetwork.onCommandResponse = { requestId, result ->
             (commandSession as? RemoteCommandSession)?.onResponse(requestId, result)
         }
+        CommandNetwork.onCapabilityV2 = { capability ->
+            serverLogSubscribed = false
+            RemoteCommandCapability.onResponse(capability)
+            syncServerLogSubscription(Minecraft.getInstance())
+        }
+        CommandNetwork.onCommandResponseV2 = { requestId, result ->
+            (commandSession as? RemoteCommandSession)?.onResponse(requestId, result)
+        }
+        CommandNetwork.onServerLogReset = {
+            state.serverConsole.clearLogs()
+        }
+        CommandNetwork.onServerLogBatch = { batch ->
+            state.serverConsole.onBatch(batch.reset, batch.dropped, batch.records)
+        }
+        RemoteCommandCapability.onChanged = {
+            syncServerLogSubscription(Minecraft.getInstance())
+        }
         ClientPlayerEvent.CLIENT_PLAYER_JOIN.register { _ -> connectCommandSession() }
         ClientPlayerEvent.CLIENT_PLAYER_QUIT.register { _ -> resetCommandSession() }
         LifecycleEvent.SERVER_STOPPED.register { _ -> resetCommandSession() }
@@ -75,10 +94,10 @@ object ConsoleClient {
             KeyMappingRegistry.register(mapping)
             return mapping
         }
-        toggleKeyMapping = register("key.ingamecnl.toggle_console", GLFW.GLFW_KEY_GRAVE_ACCENT)
-        pageUpMapping = register("key.ingamecnl.page_up", GLFW.GLFW_KEY_PAGE_UP)
-        pageDownMapping = register("key.ingamecnl.page_down", GLFW.GLFW_KEY_PAGE_DOWN)
-        goToBottomMapping = register("key.ingamecnl.go_to_bottom", GLFW.GLFW_KEY_END)
+        toggleKeyMapping = register("key.$MOD_ID.toggle_console", GLFW.GLFW_KEY_GRAVE_ACCENT)
+        pageUpMapping = register("key.$MOD_ID.page_up", GLFW.GLFW_KEY_PAGE_UP)
+        pageDownMapping = register("key.$MOD_ID.page_down", GLFW.GLFW_KEY_PAGE_DOWN)
+        goToBottomMapping = register("key.$MOD_ID.go_to_bottom", GLFW.GLFW_KEY_END)
         ClientTickEvent.CLIENT_POST.register(object : ClientTickEvent.Client {
             override fun tick(client: Minecraft) = tickOverlay(client)
         })
@@ -258,9 +277,16 @@ object ConsoleClient {
     }
 
     private fun tickOverlay(client: Minecraft) {
+        if (client.level != null && client.singleplayerServer == null &&
+            RemoteCommandCapability.access == RemoteCommandAccess.UNKNOWN
+        ) {
+            RemoteCommandCapability.request(client)
+        }
         val now = System.nanoTime()
         RemoteCommandCapability.tick(now)
+        RemoteCommandCapability.refreshIfExpired(client)
         commandSession?.tick(now)
+        syncServerLogSubscription(client)
         tickAutoSplash(client)
         if (!viewOnlyActive) return
         val overlay = viewOnlyOverlay ?: return
@@ -286,15 +312,18 @@ object ConsoleClient {
         commandSession = RemoteCommandSession(
             executeOnClient = { minecraft.execute(it) },
             registryAccess = { RemoteCommandCapability.registryAccess(minecraft) },
+            token = { RemoteCommandCapability.token },
         )
     }
 
     private fun resetCommandSession() {
+        unsubscribeServerLog()
         commandSession?.close()
         commandSession = null
         commandServer = null
         RemoteCommandCapability.reset()
         state.commandTranscript.clear()
+        state.serverConsole.clearAll()
     }
 
     internal fun commandAvailability(): CommandAvailability {
@@ -321,8 +350,61 @@ object ConsoleClient {
             commandSession
         } ?: return false
         return session.submit(command) { result ->
-            Minecraft.getInstance().execute { state.commandTranscript.addResult(result) }
+            Minecraft.getInstance().execute {
+                if (result.status == CommandResultStatus.DENIED) {
+                    RemoteCommandCapability.refresh(Minecraft.getInstance())
+                }
+                if (RemoteCommandCapability.mixedMode) {
+                    state.serverConsole.addResult(result)
+                } else {
+                    state.commandTranscript.addResult(result)
+                }
+            }
         }
+    }
+
+    internal fun isMixedMode(): Boolean = RemoteCommandCapability.mixedMode
+
+    internal fun mixedModePending(): Boolean =
+        RemoteCommandCapability.access == RemoteCommandAccess.PENDING
+
+    internal fun serverLogStreaming(): Boolean =
+        RemoteCommandCapability.logStreaming && RemoteCommandCapability.token != null
+
+    internal fun mixedReason(): String = RemoteCommandCapability.reason
+
+    private fun syncServerLogSubscription(minecraft: Minecraft) {
+        if (!RemoteCommandCapability.mixedMode || !RemoteCommandCapability.logStreaming) {
+            unsubscribeServerLog()
+            return
+        }
+        val screen = minecraft.screen
+        if (screen !is ConsoleScreen || state.mode != ConsoleMode.COMMAND) {
+            unsubscribeServerLog()
+            return
+        }
+        if (serverLogSubscribed) {
+            if (!state.serverConsole.needsResync) return
+            val token = RemoteCommandCapability.token ?: return
+            val registryAccess = minecraft.level?.registryAccess() ?: return
+            state.serverConsole.clearResync()
+            CommandNetwork.sendLogSubscribe(registryAccess, token, -1L)
+            return
+        }
+        val token = RemoteCommandCapability.token ?: return
+        val registryAccess = minecraft.level?.registryAccess() ?: return
+        state.serverConsole.clearResync()
+        if (CommandNetwork.sendLogSubscribe(registryAccess, token, state.serverConsole.lastSequence)) {
+            serverLogSubscribed = true
+        }
+    }
+
+    private fun unsubscribeServerLog() {
+        if (!serverLogSubscribed) return
+        serverLogSubscribed = false
+        val minecraft = Minecraft.getInstance()
+        val registryAccess = minecraft.level?.registryAccess() ?: return
+        CommandNetwork.sendLogUnsubscribe(registryAccess)
     }
 
     private fun onVisibleRecord(record: LogRecord) {
@@ -356,7 +438,7 @@ object ConsoleClient {
         autoSplashClosing = false
         autoSplashActive = true
         autoSplashDeadlineNanos = System.nanoTime() + ConsoleConfig.autoSplashStayNanos()
-        overlay.logView.returnToBottom()
+        overlay.timelineView.returnToBottom()
         overlay.reveal()
     }
 
@@ -411,7 +493,7 @@ object ConsoleClient {
     internal fun switchModeLabel(): String = "Shift+Tab"
 
     internal fun overlayHint(): String = Component.translatable(
-        "console.ingamecnl.overlay.hint",
+        "console.$MOD_ID.overlay.hint",
         keyLabel(toggleKeyMapping),
         switchModeLabel(),
         keyLabel(pageUpMapping),

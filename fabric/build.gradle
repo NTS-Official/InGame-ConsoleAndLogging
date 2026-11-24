@@ -46,11 +46,19 @@ dependencies {
 
 processResources {
     inputs.property 'version', project.version
+    inputs.property 'mod_id', rootProject.mod_id
     inputs.property 'fabric_language_kotlin_version', rootProject.fabric_language_kotlin_version
 
     filesMatching('fabric.mod.json') {
         expand version: inputs.properties.version,
+                mod_id: inputs.properties.mod_id,
                 fabric_language_kotlin_version: inputs.properties.fabric_language_kotlin_version
+    }
+
+    eachFile { file ->
+        if (file.path.startsWith('assets/mod_id/')) {
+            file.path = file.path.replaceFirst('assets/mod_id/', "assets/${rootProject.mod_id}/")
+        }
     }
 }
 

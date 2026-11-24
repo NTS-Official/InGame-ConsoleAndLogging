@@ -1,6 +1,6 @@
 package com.nts.ingamecnl.client.gui
 
-import com.nts.ingamecnl.client.log.LogRecord
+import com.nts.ingamecnl.log.LogRecord
 import net.minecraft.client.gui.Font
 import java.time.Instant
 import java.time.ZoneId
@@ -36,7 +36,7 @@ internal class LogLayout(private val font: Font) {
     fun layout(record: LogRecord, viewWidth: Int, numberWidth: Int): LogEntryLayout {
         val number = (record.sequence + 1).toString().padStart(numberWidth)
         val time = "[" + timeFormat.format(Instant.ofEpochMilli(record.timeMillis)) + "]"
-        val fixedWidth = numberWidth + 6 + font.width(time) + 4
+        val fixedWidth = font.width(number) + 6 + font.width(time) + 4
         val flexibleWidth = (viewWidth - fixedWidth).coerceAtLeast(0)
         val threadBudget = (flexibleWidth / 3).coerceAtLeast(0)
         val loggerBudget = (flexibleWidth / 3).coerceAtLeast(0)

@@ -1,4 +1,5 @@
 package com.nts.ingamecnl.client.log
+import com.nts.ingamecnl.log.LogRecord
 
 import com.nts.ingamecnl.log.LogLevel
 

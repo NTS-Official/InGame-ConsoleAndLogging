@@ -1,6 +1,4 @@
-package com.nts.ingamecnl.client.log
-
-import com.nts.ingamecnl.log.LogLevel
+package com.nts.ingamecnl.log
 
 data class LogRecord(
     val sequence: Long = 0,
@@ -14,7 +12,7 @@ data class LogRecord(
     val textSize: Int = utf8Size(message) + (throwableText?.let(::utf8Size) ?: 0),
 )
 
-private fun utf8Size(value: String): Int {
+internal fun utf8Size(value: String): Int {
     var size = 0
     var index = 0
     while (index < value.length) {

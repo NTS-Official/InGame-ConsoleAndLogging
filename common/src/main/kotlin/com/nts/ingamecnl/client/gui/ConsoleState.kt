@@ -3,6 +3,7 @@ package com.nts.ingamecnl.client.gui
 internal class ConsoleState {
     var mode = ConsoleMode.VIEW_ONLY
     val commandTranscript = CommandTranscript()
+    val serverConsole = ServerConsoleData()
     val logHistory = InputHistory()
     val commandHistory = InputHistory()
     private var logDraft = ""

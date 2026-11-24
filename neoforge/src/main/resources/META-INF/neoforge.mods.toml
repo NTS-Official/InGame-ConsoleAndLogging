@@ -4,45 +4,45 @@ issueTrackerURL = "https://github.com/NTS-Official/InGame-ConsoleAndLogging/issu
 license = "GPL-3.0-only"
 
 [[mods]]
-modId = "ingamecnl"
+modId = "${mod_id}"
 version = "${version}"
 displayName = "In-Game Console & Logging"
 authors = "NoTuring_Steve"
 description = '''
 An in-game logging viewer and command console with a adjustable overlay.
 '''
-logoFile = "assets/ingamecnl/icon_large.png" # Deprecated when using newer version of neoforge
+logoFile = "assets/${mod_id}/icon_large.png" # Deprecated when using newer version of neoforge
 # Replacement for newer version of neoforge.
-# iconFile = "assets/ingamecnl/icon.png"
-# bannerFile = "assets/ingamecnl/icon_large.png"
+# iconFile = "assets/${mod_id}/icon.png"
+# bannerFile = "assets/${mod_id}/icon_large.png"
 
-[[dependencies.ingamecnl]]
+[[dependencies."${mod_id}"]]
 modId = "neoforge"
 type = "required"
 versionRange = "[26.1.2,)"
 ordering = "NONE"
-side = "CLIENT"
+side = "BOTH"
 
-[[dependencies.ingamecnl]]
+[[dependencies."${mod_id}"]]
 modId = "minecraft"
 type = "required"
 versionRange = "[26.1.2,)"
 ordering = "NONE"
-side = "CLIENT"
+side = "BOTH"
 
-[[dependencies.ingamecnl]]
+[[dependencies."${mod_id}"]]
 modId = "architectury"
 type = "required"
 versionRange = "[20.1.16,)"
 ordering = "AFTER"
-side = "CLIENT"
+side = "BOTH"
 
-[[dependencies.ingamecnl]]
+[[dependencies."${mod_id}"]]
 modId = "cloth_config"
 type = "required"
 versionRange = "[26.1.154,)"
 ordering = "AFTER"
-side = "CLIENT"
+side = "BOTH"
 
 [[mixins]]
-config = "ingamecnl.mixins.json"
+config = "${mod_id}.mixins.json"

@@ -47,9 +47,16 @@ dependencies {
 
 processResources {
     inputs.property 'version', project.version
+    inputs.property 'mod_id', rootProject.mod_id
 
     filesMatching('META-INF/neoforge.mods.toml') {
-        expand version: inputs.properties.version
+        expand version: inputs.properties.version, mod_id: inputs.properties.mod_id
+    }
+
+    eachFile { file ->
+        if (file.path.startsWith('assets/mod_id/')) {
+            file.path = file.path.replaceFirst('assets/mod_id/', "assets/${rootProject.mod_id}/")
+        }
     }
 }
 

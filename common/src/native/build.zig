@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .fast });
+    const library_name = b.option([]const u8, "library-name", "Native library name") orelse "ingamecnl_grep";
 
     const comb = b.dependency("comb", .{
         .target = target,
@@ -10,7 +11,7 @@ pub fn build(b: *std.Build) void {
     }).module("comb");
 
     const lib = b.addLibrary(.{
-        .name = "ingamecnl_grep",
+        .name = library_name,
         .linkage = .dynamic,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/grep.zig"),

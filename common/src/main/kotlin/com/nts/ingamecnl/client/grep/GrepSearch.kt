@@ -1,7 +1,9 @@
 package com.nts.ingamecnl.client.grep
 
+import com.nts.ingamecnl.MOD_ID
+
 import com.nts.ingamecnl.client.log.LogPage
-import com.nts.ingamecnl.client.log.LogRecord
+import com.nts.ingamecnl.log.LogRecord
 import com.nts.ingamecnl.client.log.LogSnapshot
 import net.minecraft.client.Minecraft
 import java.util.concurrent.Executors
@@ -102,7 +104,7 @@ internal class GrepTask internal constructor(
             try {
                 runNative()
             } catch (error: Throwable) {
-                System.err.println("[ingamecnl] native grep failed, using JVM: ${error.message}")
+                System.err.println("[$MOD_ID] native grep failed, using JVM: ${error.message}")
                 runJvm()
             }
         } else {
@@ -234,7 +236,7 @@ internal class GrepTask internal constructor(
 
 internal object GrepSearch {
     private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "ingamecnl-grep").apply { isDaemon = true }
+        Thread(runnable, "${MOD_ID}-grep").apply { isDaemon = true }
     }
 
     fun submit(snapshot: LogSnapshot, query: GrepQuery, callback: (GrepOutcome) -> Unit): GrepTask {

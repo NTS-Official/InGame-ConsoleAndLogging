@@ -1,7 +1,9 @@
 package com.nts.ingamecnl.client.grep
 
+import com.nts.ingamecnl.MOD_ID
+
 import com.nts.ingamecnl.client.log.LogPage
-import com.nts.ingamecnl.client.log.LogRecord
+import com.nts.ingamecnl.log.LogRecord
 import com.nts.ingamecnl.client.log.LogSnapshot
 import com.nts.ingamecnl.client.gui.LogEntryLayout
 import com.nts.ingamecnl.client.gui.LogLayout
@@ -64,10 +66,10 @@ internal class GrepView(private val font: Font) {
     }
 
     fun statusText(): String = when {
-        error != null -> Component.translatable("console.ingamecnl.grep.failed", error ?: "").string
-        result == null -> Component.translatable("console.ingamecnl.grep.searching").string
+        error != null -> Component.translatable("console.$MOD_ID.grep.failed", error ?: "").string
+        result == null -> Component.translatable("console.$MOD_ID.grep.searching").string
         else -> Component.translatable(
-            "console.ingamecnl.grep.matches",
+            "console.$MOD_ID.grep.matches",
             result?.totalMatches ?: 0,
         ).string
     }
@@ -135,18 +137,18 @@ internal class GrepView(private val font: Font) {
         val header = query?.let { describe(it) } ?: "grep"
         graphics.text(font, font.clipToWidth(header, width - 12), left + 6, top + 4, 0xFFDCE6F2.toInt())
         val status = when {
-            error != null -> Component.translatable("console.ingamecnl.grep.failed", error ?: "").string
-            result == null -> Component.translatable("console.ingamecnl.grep.searching").string
+            error != null -> Component.translatable("console.$MOD_ID.grep.failed", error ?: "").string
+            result == null -> Component.translatable("console.$MOD_ID.grep.searching").string
             else -> {
                 val found = result ?: return
                 val range = if (found.minTimeMillis == null || found.maxTimeMillis == null) {
-                    Component.translatable("console.ingamecnl.grep.no_range").string
+                    Component.translatable("console.$MOD_ID.grep.no_range").string
                 } else {
                     "${timeFormat.format(Instant.ofEpochMilli(found.minTimeMillis))} ~ " +
                         timeFormat.format(Instant.ofEpochMilli(found.maxTimeMillis))
                 }
                 Component.translatable(
-                    "console.ingamecnl.grep.matches_range",
+                    "console.$MOD_ID.grep.matches_range",
                     found.totalMatches,
                     range,
                 ).string
@@ -162,7 +164,7 @@ internal class GrepView(private val font: Font) {
             if (error == null) {
                 graphics.text(
                     font,
-                    Component.translatable("console.ingamecnl.grep.searching").string,
+                    Component.translatable("console.$MOD_ID.grep.searching").string,
                     left + 6,
                     bodyTop,
                     0xFF95A5B8.toInt(),
@@ -174,7 +176,7 @@ internal class GrepView(private val font: Font) {
         if (found.totalMatches == 0L) {
             graphics.text(
                 font,
-                Component.translatable("console.ingamecnl.grep.empty").string,
+                Component.translatable("console.$MOD_ID.grep.empty").string,
                 left + 6,
                 bodyTop,
                 0xFF95A5B8.toInt(),
@@ -196,7 +198,7 @@ internal class GrepView(private val font: Font) {
             val first = if (found.totalMatches == 0L) 0L else this.top + 1
             val last = (this.top + drawn).coerceAtMost(found.totalMatches)
             val position = Component.translatable(
-                "console.ingamecnl.grep.position",
+                "console.$MOD_ID.grep.position",
                 first,
                 last,
                 found.totalMatches,

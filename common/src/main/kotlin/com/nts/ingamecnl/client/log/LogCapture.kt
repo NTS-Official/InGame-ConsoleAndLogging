@@ -1,5 +1,8 @@
 package com.nts.ingamecnl.client.log
 
+import com.nts.ingamecnl.MOD_ID
+import com.nts.ingamecnl.log.LogRecord
+
 import com.nts.ingamecnl.log.LogLevel
 import dev.architectury.event.events.client.ClientTickEvent
 import net.minecraft.client.Minecraft
@@ -13,7 +16,7 @@ import org.apache.logging.log4j.core.config.Property
 import java.io.PrintWriter
 import java.io.StringWriter
 
-private const val APPENDER_NAME = "ingamecnl-console"
+private const val APPENDER_NAME = "${MOD_ID}-console"
 private const val MAX_MESSAGE_CHARS = 8_000
 private const val MAX_THROWABLE_CHARS = 16_000
 private const val DRAIN_RECORD_BUDGET = 256

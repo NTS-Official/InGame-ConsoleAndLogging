@@ -70,3 +70,23 @@ Mixin 注入优先使用 MixinExtras 提供的操作注解，例如 `@WrapOperat
 开发运行与其他任务以 Wrapper 列出的实际任务为准。构建需要与项目 Java 目标匹配的 JDK，新增 Kotlin 编译目标须与其一致。
 
 当前使用 `dev.architectury.loom-no-remap`，平台模块通过 `shadowJar` 打包共享代码。发布用 Mod JAR 位于对应平台的 `build/libs/`，没有 `dev` 分类后缀；不要将带 `dev` 或 `sources` 分类的 JAR 当作发布产物，也不要默认套用 `remapJar` 流程。
+
+## 缓存与临时文件
+
+构建缓存、编译器缓存与工具临时文件放在开发人员驱动器（卷标 `ntfs-workspace`，当前挂载为 `E:`），不要写入系统盘 `C:`，也不要留在 `D:`。按项目分目录：
+
+| 用途 | 位置 |
+| --- | --- |
+| Gradle 项目缓存 | `E:/dev-cache/InGameConsoleAndLogging/gradle-project-cache` |
+| Zig 本地缓存 | `E:/dev-cache/InGameConsoleAndLogging/zig-cache` |
+| 其他工具缓存与临时产物 | `E:/dev-cache/InGameConsoleAndLogging/` 下的子目录 |
+
+```powershell
+.\gradlew.bat build --project-cache-dir E:/dev-cache/InGameConsoleAndLogging/gradle-project-cache
+```
+
+```bash
+ZIG_LOCAL_CACHE_DIR=E:/dev-cache/InGameConsoleAndLogging/zig-cache ./gradlew.bat :fabric:build
+```
+
+`D:` 为 exFAT，Gradle 锁文件与 Zig 缓存重写既有文件时会偶发 `AccessDenied`；使用上述路径可避开该问题。驱动器未挂载时先挂载再构建，不要把缓存改到 `C:`。一次性的探测脚本与临时文件用完即删。

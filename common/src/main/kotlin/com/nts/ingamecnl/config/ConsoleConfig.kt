@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.config
 
+import com.nts.ingamecnl.MOD_ID
+
 import me.shedaniel.autoconfig.AutoConfig
 import me.shedaniel.autoconfig.ConfigData
 import me.shedaniel.autoconfig.ConfigHolder
@@ -10,7 +12,7 @@ import me.shedaniel.clothconfig2.gui.entries.SelectionListEntry
 import com.nts.ingamecnl.log.LogLevel
 import com.nts.ingamecnl.log.LogLimits
 
-@Config(name = "ingamecnl")
+@Config(name = MOD_ID)
 class ConsoleConfigData : ConfigData {
     @JvmField
     @field:ConfigEntry.Category("filter")
@@ -134,22 +136,22 @@ class ConsoleConfigData : ConfigData {
     var errorMessageColor: Int = 0xFF5555
 
     @JvmField
-    @field:ConfigEntry.Category("overlay")
+    @field:ConfigEntry.Category("panel")
     @field:ConfigEntry.Gui.Tooltip
     @field:ConfigEntry.BoundedDiscrete(min = 30, max = 100)
-    var overlayHeightPercent: Int = 65
+    var panelHeightPercent: Int = 50
 
     @JvmField
-    @field:ConfigEntry.Category("overlay")
+    @field:ConfigEntry.Category("panel")
     @field:ConfigEntry.Gui.Tooltip
     @field:ConfigEntry.BoundedDiscrete(min = 0, max = 1000)
-    var overlayAnimationMillis: Int = 180
+    var panelAnimationMillis: Int = 180
 
     @JvmField
-    @field:ConfigEntry.Category("overlay")
+    @field:ConfigEntry.Category("panel")
     @field:ConfigEntry.Gui.Tooltip
     @field:ConfigEntry.BoundedDiscrete(min = 0, max = 100)
-    var overlayOpacityPercent: Int = 10
+    var panelOpacityPercent: Int = 10
 
     @JvmField
     @field:ConfigEntry.Category("singleplayer")
@@ -187,9 +189,9 @@ class ConsoleConfigData : ConfigData {
         loggerColor = rgb(loggerColor)
         messageColor = rgb(messageColor)
         errorMessageColor = rgb(errorMessageColor)
-        overlayHeightPercent = overlayHeightPercent.coerceIn(30, 100)
-        overlayAnimationMillis = overlayAnimationMillis.coerceIn(0, 1000)
-        overlayOpacityPercent = overlayOpacityPercent.coerceIn(0, 100)
+        panelHeightPercent = panelHeightPercent.coerceIn(30, 100)
+        panelAnimationMillis = panelAnimationMillis.coerceIn(0, 1000)
+        panelOpacityPercent = panelOpacityPercent.coerceIn(0, 100)
         autoSplashHeightPercent = autoSplashHeightPercent.coerceIn(10, 100)
         autoSplashStayMillis = autoSplashStayMillis.coerceIn(500, 10_000)
         autoSplashSilenceSeconds = autoSplashSilenceSeconds.coerceIn(0, 600)
@@ -215,7 +217,7 @@ enum class FilterLevel : SelectionListEntry.Translatable {
     ERROR,
     FATAL;
 
-    override fun getKey(): String = "text.autoconfig.ingamecnl.option.filterLevel.${name.lowercase()}"
+    override fun getKey(): String = "text.autoconfig.$MOD_ID.option.filterLevel.${name.lowercase()}"
 
     fun toLogLevel(): LogLevel? = when (this) {
         ALL -> null
@@ -228,7 +230,7 @@ enum class RemoteCommandAccessMode : SelectionListEntry.Translatable {
     BLACKLIST;
 
     override fun getKey(): String =
-        "text.autoconfig.ingamecnl.option.remoteCommandAccessMode.${name.lowercase()}"
+        "text.autoconfig.$MOD_ID.option.remoteCommandAccessMode.${name.lowercase()}"
 }
 
 object ConsoleConfig {
@@ -295,12 +297,12 @@ object ConsoleConfig {
         current.save()
     }
 
-    fun overlayHeightPercent(): Int = data.overlayHeightPercent.coerceIn(30, 100)
+    fun panelHeightPercent(): Int = data.panelHeightPercent.coerceIn(30, 100)
 
-    fun overlayAnimationNanos(): Long =
-        (data.overlayAnimationMillis.coerceIn(0, 1000) * 1_000_000L).coerceAtLeast(1L)
+    fun panelAnimationNanos(): Long =
+        (data.panelAnimationMillis.coerceIn(0, 1000) * 1_000_000L).coerceAtLeast(1L)
 
-    fun overlayAlpha(): Int = data.overlayOpacityPercent.coerceIn(0, 100) * 255 / 100
+    fun panelAlpha(): Int = data.panelOpacityPercent.coerceIn(0, 100) * 255 / 100
 
     fun timeColor(): Int = opaque(data.timeColor)
 

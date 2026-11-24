@@ -1,4 +1,5 @@
 package com.nts.ingamecnl.client.grep
+import com.nts.ingamecnl.log.LogRecord
 
 import com.nts.ingamecnl.log.LogLevel
 import java.time.DateTimeException
@@ -18,7 +19,7 @@ internal data class GrepQuery(
     val startText: String?,
     val endText: String?,
 ) {
-    fun matches(record: com.nts.ingamecnl.client.log.LogRecord): Boolean {
+    fun matches(record: com.nts.ingamecnl.log.LogRecord): Boolean {
         if (record.level != level) return false
         if (startMillis != null && record.timeMillis < startMillis) return false
         if (endMillis != null && record.timeMillis > endMillis) return false

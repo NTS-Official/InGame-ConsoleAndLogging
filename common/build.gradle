@@ -28,14 +28,16 @@ def findAndroidNdk = {
 }
 def androidNdk = findAndroidNdk()
 def androidApi = 26
+def modId = rootProject.mod_id
+def nativeLibrary = "${modId}_grep"
 def nativeTargets = [
-    [zig: "x86_64-windows-gnu", dir: "windows-x86_64", subdir: "bin", file: "ingamecnl_grep.dll"],
-    [zig: "aarch64-windows-gnu", dir: "windows-aarch64", subdir: "bin", file: "ingamecnl_grep.dll"],
-    [zig: "x86_64-linux-gnu", dir: "linux-x86_64", subdir: "lib", file: "libingamecnl_grep.so"],
-    [zig: "aarch64-linux-gnu", dir: "linux-aarch64", subdir: "lib", file: "libingamecnl_grep.so"],
-    [zig: "aarch64-linux-android", dir: "android-aarch64", subdir: "lib", file: "libingamecnl_grep.so", android: true],
-    [zig: "x86_64-macos", dir: "macos-x86_64", subdir: "lib", file: "libingamecnl_grep.dylib"],
-    [zig: "aarch64-macos", dir: "macos-aarch64", subdir: "lib", file: "libingamecnl_grep.dylib"],
+    [zig: "x86_64-windows-gnu", dir: "windows-x86_64", subdir: "bin", file: "${nativeLibrary}.dll"],
+    [zig: "aarch64-windows-gnu", dir: "windows-aarch64", subdir: "bin", file: "${nativeLibrary}.dll"],
+    [zig: "x86_64-linux-gnu", dir: "linux-x86_64", subdir: "lib", file: "lib${nativeLibrary}.so"],
+    [zig: "aarch64-linux-gnu", dir: "linux-aarch64", subdir: "lib", file: "lib${nativeLibrary}.so"],
+    [zig: "aarch64-linux-android", dir: "android-aarch64", subdir: "lib", file: "lib${nativeLibrary}.so", android: true],
+    [zig: "x86_64-macos", dir: "macos-x86_64", subdir: "lib", file: "lib${nativeLibrary}.dylib"],
+    [zig: "aarch64-macos", dir: "macos-aarch64", subdir: "lib", file: "lib${nativeLibrary}.dylib"],
 ]
 
 tasks.register("buildNativeGrep") {
@@ -68,7 +70,7 @@ tasks.register("buildNativeGrep") {
 
         nativeTargets.each { target ->
             def prefix = nativeProject.dir("zig-out/${target.zig}").asFile
-            def command = ["zig", "build", "-Drelease", "-Dtarget=${target.zig}"]
+            def command = ["zig", "build", "-Drelease", "-Dtarget=${target.zig}", "-Dlibrary-name=${nativeLibrary}"]
             if (target.android) {
                 if (androidNdk == null) {
                     logger.warn("Skipping Android native grep: Android NDK is not installed.")
@@ -104,7 +106,7 @@ darwin_sdk_dir=
             if (!source.isFile()) {
                 throw new GradleException("Native grep output missing for ${target.zig}: ${source}")
             }
-            def destination = nativeResources.get().dir("assets/ingamecnl/native/${target.dir}").asFile
+            def destination = nativeResources.get().dir("assets/mod_id/native/${target.dir}").asFile
             destination.mkdirs()
             copy {
                 from source
@@ -115,7 +117,26 @@ darwin_sdk_dir=
 }
 
 sourceSets.main.resources.srcDir(nativeResources)
+processResources {
+    inputs.property 'mod_id', rootProject.mod_id
+    rename('mixins.json', "${rootProject.mod_id}.mixins.json")
+
+    eachFile { file ->
+        if (file.path.startsWith('assets/mod_id/')) {
+            file.path = file.path.replaceFirst('assets/mod_id/', "assets/${rootProject.mod_id}/")
+        }
+    }
+
+    filesMatching('assets/**/lang/*.json') {
+        expand mod_id: inputs.properties.mod_id
+    }
+}
 processResources.dependsOn(tasks.named("buildNativeGrep"))
+
+tasks.named("sourcesJar") {
+    dependsOn(tasks.named("buildNativeGrep"))
+    exclude 'assets/**/native/**'
+}
 
 dependencies {
     // We depend on Fabric Loader here to use the Fabric @Environment annotations,

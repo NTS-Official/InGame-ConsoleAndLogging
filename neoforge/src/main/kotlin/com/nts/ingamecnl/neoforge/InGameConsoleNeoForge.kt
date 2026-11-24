@@ -1,19 +1,20 @@
 package com.nts.ingamecnl.neoforge
 
 import com.nts.ingamecnl.MOD_ID
-import com.nts.ingamecnl.client.ConsoleClient
-import com.nts.ingamecnl.client.config.ConfigScreenFactory
+import com.nts.ingamecnl.neoforge.client.NeoForgeClientSetup
+import com.nts.ingamecnl.server.ServerCommandMode
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.fml.ModContainer
 import net.neoforged.fml.common.Mod
-import net.neoforged.neoforge.client.gui.IConfigScreenFactory
+import net.neoforged.fml.loading.FMLEnvironment
 
-@Mod(MOD_ID, dist = [Dist.CLIENT])
+@Mod(MOD_ID)
 class InGameConsoleNeoForge(container: ModContainer) {
     init {
-        ConsoleClient.initialize()
-        container.registerExtensionPoint(IConfigScreenFactory::class.java) {
-            IConfigScreenFactory { _, parent -> ConfigScreenFactory.create(parent) }
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            NeoForgeClientSetup.initialize(container)
+        } else {
+            ServerCommandMode.initialize()
         }
     }
 }

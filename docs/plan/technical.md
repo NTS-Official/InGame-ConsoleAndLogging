@@ -4,6 +4,8 @@
 
 依赖版本集中在根 [gradle.properties](../../gradle.properties)，Java 与 Kotlin 目标由根 [build.gradle](../../build.gradle) 的 `javaTarget` 统一配置。三个模块均启用 Kotlin JVM 插件，Kotlin toolchain 和 JVM target 与 Java 目标一致。
 
+Mod ID 由根 `gradle.properties` 的 `mod_id` 统一提供：Gradle 构建脚本从该属性派生产物名、资源命名空间与 native 库名，Kotlin 侧引用 [InGameConsole.kt](../../common/src/main/kotlin/com/nts/ingamecnl/InGameConsole.kt) 的 `MOD_ID`、`MOD_NAME`。资源目录在源码中写作 `assets/mod_id/`，由各模块 `processResources` 的 `eachFile` 改写为 `assets/<mod_id>/`；`common` 的 `mixins.json` 也在这一步改名为 `<mod_id>.mixins.json`；语言文件的键前缀与平台 metadata 使用 `${mod_id}` 占位符，由 `expand` 展开。
+
 Kotlin 编译输出属于各模块的主源码集，随现有 `jar`、`sourcesJar` 和 Architectury 平台转换任务输出。平台 `shadowBundle` 只包含 `common` 转换产物，不展开传递运行依赖。
 
 | 平台 | Kotlin 运行时 | 加载入口 |
@@ -13,7 +15,7 @@ Kotlin 编译输出属于各模块的主源码集，随现有 `jar`、`sourcesJa
 
 NeoForge 发布 JAR 不嵌入 Kotlin 标准库，也不生成 Jar-in-Jar 标准库条目；玩家需与 NeoForge 一起安装 Kotlin for Forge。现阶段不使用 Kotlin 反射或协程运行时。
 
-Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口限定客户端分发环境，依赖声明对应客户端侧。共享入口由各加载器在客户端初始化时调用一次。
+Fabric 的 `environment` 为 `*`，客户端与服务端入口分别初始化；NeoForge 入口可见于双端，按 `FMLEnvironment.getDist()` 分支注册客户端界面与服务端命令模式。平台依赖声明为双端，客户端专用类不在服务端初始化路径中加载。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -21,7 +23,9 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | [ConsoleClient.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/ConsoleClient.kt) | 共享初始化入口 `ConsoleClient.initialize()`、全局按键、模式状态、仅查看与自动展开叠加层生命周期 |
 | [ConsoleScreen.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ConsoleScreen.kt) | 控制台 `Screen` 生命周期、输入、模式切换、命令执行与收起动画 |
 | [ConsolePanelRenderer.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ConsolePanelRenderer.kt) | 普通面板、仅查看叠加层与自动展开叠加层的背景、内容、状态行和输入区绘制 |
-| [LogView.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/LogView.kt) | 日志区滚动锚点、新增计数、跟随提示命中与可见行绘制 |
+| [Timeline.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/Timeline.kt) | 时间线条目类型、数据源接口与公共配色 |
+| [TimelineView.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/TimelineView.kt) | 所有模式共用的时间线排版、换行、着色、滚动与跟随提示 |
+| [LogTimelineSource.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/LogTimelineSource.kt) | 客户端日志历史的时间线数据源 |
 | [LogLayout.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/LogLayout.kt) | 日志行排版、像素宽度换行与行高计算 |
 | [ConsoleMode.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ConsoleMode.kt) | 控制台模式、前缀与切换手势 |
 | [ConsoleState.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ConsoleState.kt) | 跨界面保留的模式状态、日志/命令草稿与输入历史 |
@@ -31,7 +35,7 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | [LogInbox.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogInbox.kt) | 有界接收队列、序号分配与入队时的筛选快照 |
 | [LogHistory.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogHistory.kt) | 有界原始历史、实时视图、淘汰计数与查询快照 |
 | [LogPage.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogPage.kt) | 1024 条分页、封存快照与序号范围 |
-| [LogRecord.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/LogRecord.kt) | 不可变日志记录 |
+| [LogRecord.kt](../../common/src/main/kotlin/com/nts/ingamecnl/log/LogRecord.kt) | 不可变日志记录 |
 | [DisplayFilter.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/DisplayFilter.kt) | 级别与关键词筛选规则 |
 | [FilterCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/FilterCommand.kt) | `filter` 命令解析与规则应用 |
 | [AutoSplashCommand.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/log/AutoSplashCommand.kt) | `autosplash filter` 命令解析 |
@@ -52,9 +56,20 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | [ServerCommandHandler.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerCommandHandler.kt) | 服务端请求校验与执行 |
 | [CommandNetwork.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandNetwork.kt) | 命令能力与请求/响应网络包 |
 | [RemoteCommandSession.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/RemoteCommandSession.kt) | 非主机客户端命令会话 |
-| [RemoteCommandCapability.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/RemoteCommandCapability.kt) | 远程命令能力探测与超时 |
-| [CommandTranscript.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/CommandTranscript.kt) | 有界命令时间线与结果文案 |
-| [CommandView.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/CommandView.kt) | 命令时间线换行、贴底绘制与滚动 |
+| [RemoteCommandCapability.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/RemoteCommandCapability.kt) | 远程命令能力探测、令牌与会话状态 |
+| [CommandTranscript.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/CommandTranscript.kt) | 有界命令时间线数据源与结果文案 |
+| [ServerConsoleData.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ServerConsoleData.kt) | 混合模式服务端日志原始缓冲、过滤、命令条目与查询快照 |
+| [ServerCommandConfig.kt](../../common/src/main/kotlin/com/nts/ingamecnl/config/ServerCommandConfig.kt) | 专用服务器命令开关、名单、限流、会话与日志配置 |
+| [DedicatedCommandAccess.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/DedicatedCommandAccess.kt) | 专用服务器名单与 UUID/IP 校验 |
+| [ServerCommandSessions.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerCommandSessions.kt) | 专用服务器短期能力令牌 |
+| [ServerRequestGuard.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerRequestGuard.kt) | 命令请求频率限制与请求 ID 去重 |
+| [CommandProtocol.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandProtocol.kt) | v2 能力与会话日志批次数据结构 |
+| [ServerLogStreamer.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerLogStreamer.kt) | 服务端日志订阅、续传与每 tick 推送 |
+| [ServerLogBuffer.kt](../../common/src/main/kotlin/com/nts/ingamecnl/server/log/ServerLogBuffer.kt) | 服务端日志环形缓冲、序号与快照 |
+| [ServerLogCapture.kt](../../common/src/main/kotlin/com/nts/ingamecnl/server/log/ServerLogCapture.kt) | 服务端独立 Log4j 采集 Appender |
+| [ServerCommandMode.kt](../../common/src/main/kotlin/com/nts/ingamecnl/server/ServerCommandMode.kt) | 服务端初始化、管理命令、tick 推送与清理 |
+| [InGameConsoleFabricServer.kt](../../fabric/src/main/kotlin/com/nts/ingamecnl/fabric/InGameConsoleFabricServer.kt) | Fabric 专用服务器入口 |
+| [NeoForgeClientSetup.kt](../../neoforge/src/main/kotlin/com/nts/ingamecnl/neoforge/client/NeoForgeClientSetup.kt) | NeoForge 客户端初始化 |
 | [KeyboardHandlerMixin.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/mixin/KeyboardHandlerMixin.kt) | 全局键盘与字符输入接入 |
 | [MouseHandlerMixin.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/mixin/MouseHandlerMixin.kt) | 全局鼠标热键接入 |
 | [MinecraftScreenMixin.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/mixin/MinecraftScreenMixin.kt) | 覆盖前界面的挂起、恢复与生命周期接入 |
@@ -62,9 +77,9 @@ Fabric 的 `environment` 为 `client`，只有客户端入口。NeoForge 入口�
 | [ModMenuIntegration.kt](../../fabric/src/main/kotlin/com/nts/ingamecnl/fabric/ModMenuIntegration.kt) | Fabric Mod Menu 配置入口，未安装 Mod Menu 时不加载 |
 | [InGameConsoleNeoForge.kt](../../neoforge/src/main/kotlin/com/nts/ingamecnl/neoforge/InGameConsoleNeoForge.kt) | NeoForge 客户端生命周期接入 |
 
-平台模块分别依赖 `common`，`common` 不依赖平台模块。共享实现使用 Architectury 的 `KeyMappingRegistry` 注册按键。客户端 Mixin 由 [ingamecnl.mixins.json](../../common/src/main/resources/ingamecnl.mixins.json) 声明，使用 Kotlin 编写并优先采用 MixinExtras 注入；输入与界面规则统一由 Kotlin 入口负责。
+平台模块分别依赖 `common`，`common` 不依赖平台模块。共享实现使用 Architectury 的 `KeyMappingRegistry` 注册按键。客户端 Mixin 由 [mixins.json](../../common/src/main/resources/mixins.json) 声明，使用 Kotlin 编写并优先采用 MixinExtras 注入；输入与界面规则统一由 Kotlin 入口负责。
 
-包边界按“是否只在客户端运行”划分：`com.nts.ingamecnl.config`、`com.nts.ingamecnl.command` 和 `com.nts.ingamecnl.log` 中的配置、命令执行、授权与日志级别不持有客户端界面；`client.config`、`client.command`、`client.gui` 只放配置页面、客户端命令会话与界面。内置服务端与客户端同进程运行时，服务端侧可直接读取根配置中的局域网授权设置。
+包边界按“是否只在客户端运行”划分：`com.nts.ingamecnl.config`、`com.nts.ingamecnl.command`、`com.nts.ingamecnl.log` 与 `com.nts.ingamecnl.server` 中的配置、命令执行、授权、协议与服务端日志不持有客户端界面；`client.config`、`client.command`、`client.gui` 只放配置页面、客户端命令会话、混合模式数据与界面。内置服务端与客户端同进程运行时，服务端侧可直接读取根配置中的局域网授权设置；专用服务器使用独立服务端配置。
 
 Cloth Config 版本由根 `gradle.properties` 的 `cloth_config_version` 统一管理。`common` 以 `compileOnly` 使用公共 API artifact，Fabric 与 NeoForge 分别引入平台 artifact；平台 JAR 提供运行时的配置目录实现，因此不把公共 artifact 作为运行依赖。Mod Menu 是 Fabric 的可选运行依赖，构建时引入以编译入口类，发布 metadata 只声明 `suggests`。
 
@@ -78,21 +93,21 @@ Cloth Config 版本由根 `gradle.properties` 的 `cloth_config_version` 统一�
 
 日志与命令模式打开时保存原 `Screen`，通过 `Minecraft.setScreen` 安装控制台。生命周期桥接在覆盖期间挂起原界面的 `removed`，恢复时跳过重复 `added` 和初始化；尺寸改变时调用 `resize`。原界面继续更新和绘制，键鼠输入由控制台接收。游戏切换到其他界面时正常移除挂起界面，关闭面板时恢复原界面、草稿和焦点。
 
-仅查看模式不安装 `Screen`，通过 `ClientGuiEvent.RENDER_HUD` 在无界面时、`ClientGuiEvent.RENDER_POST` 在其他界面绘制后绘制叠加层。客户端 tick 检查世界变化并在窗口尺寸变化时重排叠加层。叠加层默认占屏幕上方约 65%，不创建输入框、关闭按钮和焦点；`Minecraft` 仍按无界面状态处理游戏输入，世界中鼠标保持抓取，存档外鼠标事件直接到达下层界面。Shift+Tab 与 Esc 由全局键盘接入消费，翻页与回底只调用叠加层的滚动逻辑。
+仅查看模式不安装 `Screen`，通过 `ClientGuiEvent.RENDER_HUD` 在无界面时、`ClientGuiEvent.RENDER_POST` 在其他界面绘制后绘制叠加层。客户端 tick 检查世界变化并在窗口尺寸变化时重排叠加层。叠加层默认占屏幕上方约 50%，不创建输入框、关闭按钮和焦点；`Minecraft` 仍按无界面状态处理游戏输入，世界中鼠标保持抓取，存档外鼠标事件直接到达下层界面。Shift+Tab 与 Esc 由全局键盘接入消费，翻页与回底只调用叠加层的滚动逻辑。
 
 自动展开叠加层同样不安装 `Screen`，由 `RENDER_HUD`/`RENDER_POST` 在仅查看叠加层之前绘制。它默认占 25% 高度，不绘制标题、状态行、输入框、关闭按钮和底部提示；默认只接收 Esc 提前收起，其他键鼠事件直接放行。Esc 收起可关闭，关闭后 Esc 完全交给游戏；手动 Esc 收起会记录静默截止时间，静默期内不再触发。手动控制台、仅查看面板或配置界面打开时暂停自动展开。
 
-`ConsoleScreen` 使用目标版本的 `extractRenderState(GuiGraphicsExtractor, …)` 绘制，输入事件使用 `KeyEvent`、`MouseButtonEvent`。仅查看叠加层使用配置的高度百分比，自动展开叠加层使用自身的 10%～100% 高度设置，日志与命令模式固定为 65%；面板不绘制全屏模糊背景，`isPauseScreen()` 返回 `false`。
+`ConsoleScreen` 使用目标版本的 `extractRenderState(GuiGraphicsExtractor, …)` 绘制，输入事件使用 `KeyEvent`、`MouseButtonEvent`。面板高度取配置的百分比，仅查看、日志与命令模式共用；自动展开叠加层使用自身的 10%～100% 高度设置；面板不绘制全屏模糊背景，`isPauseScreen()` 返回 `false`。
 
 Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日志模式，日志模式进入命令模式，命令模式返回仅查看模式；三种模式始终在循环中。从按下到释放只切换一次。模式切换时替换输入框内容并将焦点交还输入框，日志与命令的草稿分别保存；仅查看模式没有草稿。日志与命令各自维护最多 200 条会话内输入历史；输入行聚焦时 ↑/↓ 在历史与当前草稿之间移动，越过最新一条恢复进入历史前的草稿。窗口尺寸改变时仅重排既有控件，保留文本、选区与焦点。所有文案使用语言资源，固定前缀与行尾切换提示在输入框外绘制；输入区域预留提示宽度，窄窗采用简短提示。
 
-日志与命令模式的背景 alpha 固定为 10% 不透明度，仅查看与自动展开叠加层使用配置的不透明度；文本维持正常透明度。输入框不绘制默认底色，关闭按钮使用无背景的文字按钮。
+面板背景 alpha 取配置的不透明度，三种模式与自动展开共用；文本维持正常透明度。输入框不绘制默认底色，关闭按钮使用无背景的文字按钮。
 
-`PanelTransition` 保存起始展开比例、展开或收起目标及单调时钟起始值，按完整行程耗时线性计算当前位置。仅查看与自动展开叠加层使用配置的动画时长，日志与命令模式固定 180 毫秒。仅查看叠加层首次创建后先重置展开起点再播放滑入；从仅查看切换到日志/命令模式时直接以展开状态显示，不重复播放动画。提前关闭和收起途中反向展开均从当前位置匀速移动，不跳回动画端点。每帧同步更新控件位置与可见区域裁剪，鼠标命中使用相同位置。
+`PanelTransition` 保存起始展开比例、展开或收起目标及单调时钟起始值，按完整行程耗时线性计算当前位置，耗时取配置的动画时长并用于三种模式与自动展开。仅查看叠加层首次创建后先重置展开起点再播放滑入；从仅查看切换到日志/命令模式时直接以展开状态显示，不重复播放动画。提前关闭和收起途中反向展开均从当前位置匀速移动，不跳回动画端点。每帧同步更新控件位置与可见区域裁剪，鼠标命中使用相同位置。
 
 面板不随客户端世界对象变化自动关闭，进入世界后保持展开。日志与命令模式下开关热键的字符输入优先于收起；仅查看模式下开关热键切换叠加层。Esc、关闭按钮和仅查看模式的开关热键启动收起；收起期间停用输入编辑和关闭按钮，清除 tooltip，完成后通过 `Minecraft.setScreen(previousScreen)` 恢复原界面；原界面为空时返回游戏。
 
-命令模式在主机本地与内置服务端就绪时可用；非主机客户端只有收到主机的能力响应并获授权后可用，否则状态行显示本地服务端不可用或等待授权。命令模式始终保留在模式循环中。日志模式的 Enter 提交 `filter` 或 `autosplash filter` 命令，命令模式的 Enter 交给命令会话。
+命令模式在主机本地与内置服务端就绪时可用；非主机客户端或专用服务器客户端只有收到 v2 能力响应并获授权后可用，否则状态行显示等待授权或不可用。专用服务器授权后命令模式显示为黄色的混合模式。命令模式始终保留在模式循环中。日志模式的 Enter 提交 `filter`、`autosplash filter` 或 `grep` 命令，命令模式的 Enter 交给命令会话；混合模式以 `:` 开头的输入改在本地解析 `:filter`/`:grep`。
 
 ## 记录与状态所有权
 
@@ -122,27 +137,31 @@ Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日�
 
 实时视图按记录序号保存顶部锚点。未滚动时从最新记录向上取可见内容并自动跟随；上翻后锚点固定，新记录到达或头部淘汰不改变顶部位置；锚点被淘汰时从当前最旧记录继续显示；回到底部时清除锚点。新增计数使用入队时记录的可见总数与锚点快照之差。
 
-日志行以接收序号开头，后接 `[时间] [线程/级别] (logger) 消息`。默认沿用 Loom 控制台配色：时间蓝色，线程和级别按级别着色，logger 青色，ERROR、FATAL 的消息红色；各级颜色可在配置中修改。括号作为普通字符保留。消息按像素宽度换行，续行不重复前缀且从内容区左边开始，单条记录最多排版 8 行，超出部分以省略号结尾。布局只计算可见记录，行高随换行行数变化，滚动位置以记录锚点和可见高度共同确定。仅查看叠加层复用同一布局与滚动锚点，高度使用配置值，默认 65%。
+日志行以接收序号开头，后接 `[时间] [线程/级别] (logger) 消息`。默认沿用 Loom 控制台配色：时间蓝色，线程和级别按级别着色，logger 青色，ERROR、FATAL 的消息红色；各级颜色可在配置中修改。括号作为普通字符保留。消息按像素宽度换行，续行不重复前缀且从内容区左边开始，单条记录最多排版 8 行，超出部分以省略号结尾。布局只计算可见记录，行高随换行行数变化，滚动位置以记录锚点和可见高度共同确定。三种模式与仅查看叠加层复用同一布局与滚动锚点，高度使用配置值，默认 50%。
 
 自动展开以实时视图记录为输入：记录先通过入队时的显示筛选，再检查静默期、级别阈值和可选关键词；关键词在消息与异常文本中忽略大小写匹配。命中后显示只读叠加层并重置停留计时，新的命中继续推迟收起。总开关、触发级别、关键词、高度、停留时间、Esc 收起和静默期来自配置；`autosplash filter` 写入关键词并保存。手动 Esc 收起后按配置进入静默期；手动面板或配置页面优先，自动展开在其打开时收起。
 
-## 阶段 2：内置服务端命令模式
+## 阶段 2：内置服务端与专用服务器命令模式
 
-客户端加入世界时，如果 `Minecraft.singleplayerServer` 已启动且就绪，创建 `LocalCommandSession`；否则请求主机能力并创建 `RemoteCommandSession`。退出世界、断开连接或服务端停止时关闭会话、清空待返回表与命令时间线。
+客户端加入世界时，如果 `Minecraft.singleplayerServer` 已启动且就绪，创建 `LocalCommandSession`；否则请求远端能力并创建 `RemoteCommandSession`。退出世界、断开连接或服务端停止时关闭会话、清空待返回表、混合模式日志与命令时间线。远端能力由主机或专用服务器的 v2 通道返回；专用服务器使用独立配置 `ingamecnl-server.json` 与服务端入口。
 
 命令统一由 `ServerCommandExecutor` 执行：以 `server.createCommandSourceStack().withSource(CapturingCommandSource)` 为基础，保留服务端控制台的所有者权限、世界位置与维度，不绑定玩家实体，因此 `@s` 不是玩家，相对坐标以服务端命令源为准。随后调用命令调度器的 `parse` 与 `execute`；语法错误与执行异常转换为失败反馈，成功时保留返回值。`CapturingCommandSource` 只收集反馈文本，最多 64 条或 16000 字符，并拒绝向管理员广播，避免命令输出再次写入 Log4j。
 
 本地会话通过 `server.executeIfPossible` 切到服务端线程，再通过客户端执行器投递结果；命令请求带自增请求号与 10 秒超时，超时标记为结果未知且不重试，旧世界或已关闭会话的结果直接丢弃。
 
-非主机客户端通过 `ingamecnl:command_capability_request`、`command_capability`、`command_request`、`command_response` 四个通道与主机通信。能力响应只返回是否允许，不泄露名单；每次执行前由 `CommandAccess` 重新校验。主机本人始终允许；总开关关闭时拒绝所有非主机客户端；白名单要求玩家名忽略大小写或 IP 精确匹配，任一命中即允许；黑名单命中即拒绝，未命中允许。白名单为空时不授权任何非主机客户端，黑名单为空且总开关开启时允许所有非主机客户端。远程客户端必须安装本模组，普通远程服务器没有该通道。
+非主机客户端通过 `ingamecnl:command_capability_request`、`command_capability`、`command_request`、`command_response` 四个 v1 通道与主机通信；专用服务器与新版客户端使用 `command_capability_v2_request`、`command_capability_v2`、`command_request_v2`、`command_response_v2`，以及 `server_log_subscribe_v2`、`server_log_unsubscribe_v2`、`server_log_batch_v2` 日志通道。v1 能力响应只返回是否允许；v2 额外返回短期令牌、TTL、拒绝原因、协议版本、是否为专用服务器混合模式与日志流开关，不泄露名单。只有专用服务器下发令牌；集成服务器（含对局域网开放的单人存档）返回 `mixed=false` 且不下发令牌，客户端继续使用 v1 通道，命令模式保持原名。服务端每次执行前重新校验真实 `ServerPlayer`、令牌、名单与请求频率，不信任客户端上报的身份。主机本人始终允许；局域网总开关关闭时拒绝所有非主机客户端；白名单要求玩家名忽略大小写、UUID 或 IP 精确匹配，任一命中即允许；黑名单命中即拒绝。白名单或黑名单为空时均拒绝所有玩家。专用服务器默认关闭命令模式，管理员用 `/ingamecnl commandmode status|on|off|reload` 管理，要求管理员权限；请求按每玩家分钟窗口、最小间隔和请求 ID 去重，命令执行写入审计日志。远程客户端必须安装本模组，普通远程服务器没有该通道。
 
-命令输入与反馈进入 `CommandTranscript`，上限 200 条或 20000 字符，条目区分输入、输出与错误；`CommandView` 用 `Font.split` 按像素宽度换行并贴底显示，支持 PageUp/PageDown、End 与滚轮。命令模式的内容区改为时间线，不再绘制日志列表；状态行区分本地服务端、已授权局域网主机、等待授权与不可用。
+命令输入与反馈进入 `CommandTranscript`，上限 200 条或 20000 字符，条目区分输入、输出与错误。所有模式的文本区共用 `TimelineView`，只切换 `TimelineSource`：日志模式用 `LogTimelineSource`，命令模式用 `CommandTranscript`，混合模式用 `ServerConsoleData`。`TimelineView` 用 `Font.split` 按传入内容区宽度换行并贴底显示，滚动偏移按新增行高度补偿，支持 PageUp/PageDown、Home、End 与滚轮；`LogLayout` 负责带序号、时间、级别与 logger 前缀的日志行排版及续行着色。状态行区分本地服务端、已授权局域网主机、等待授权与不可用。
+
+专用服务器授权成功后，命令模式界面显示为黄色的混合模式，但内部仍是 `ConsoleMode.COMMAND`。服务端用独立 Log4j Appender 采集日志到环形缓冲，默认 10000 条或 16 MiB，按序号淘汰；客户端订阅时先收到最近 `logBacklogLines` 条快照，之后服务端每 tick 最多推送 256 条或 64 KiB，客户端发现序号缺口时清空并重新请求。每个订阅在服务端持有待发队列，`lastSequence` 只推进到实际发出的最后一条，避免快照被批次上限截断后误判为已送达。服务端日志连同玩家聊天、加入退出等 root logger 输出一起推送，只进入 `ServerConsoleData`，不进入客户端 `LogCapture`，不触发自动展开。混合模式输入不以 `:` 开头时提交服务端命令；以 `:` 开头时在本地执行 `:filter` 或 `:grep`，不发送到服务端。`:filter` 使用独立的 `DisplayFilter` 快照，只影响后续到达的服务端日志，原始缓冲保留全部记录；状态行与 `:filter show` 同时显示当前规则与显示/隐藏计数，离开混合模式或断开连接时清除筛选状态。`:grep` 对原始缓冲建立 `LogSnapshot`，复用日志查询的后台扫描与阅读区。服务端日志、命令输入与命令输出由同一个 `TimelineView` 排进同一时间线，命令条目最多 200 条或 20000 字符；命令结果、执行失败和本地命令错误都作为时间线条目常驻，不再写界面底部的一次性提示。混合模式上翻后新记录到达时按新增行高度补偿滚动偏移，保持当前阅读位置。
 
 ## 配置
 
-配置模型位于 `common` 的 `config`，使用 Cloth Config 的 AutoConfig 与 Gson 序列化，文件名为 `ingamecnl`；客户端配置页面入口位于 `client/config`。字段分为筛选、日志容量、自动展开、颜色、叠加层和单人游戏六组：筛选保存级别与关键词；日志容量保存条数上限与文本量上限（MiB）；自动展开保存总开关、触发级别、触发关键词、高度百分比、停留毫秒数、Esc 收起开关和静默秒数；颜色保存时间、各级别、logger、普通消息和错误消息的 RGB 值（渲染时补为不透明 ARGB）；叠加层保存仅查看高度百分比、动画毫秒数和不透明度百分比；单人游戏保存远程命令总开关、名单模式以及玩家名/IP 名单。加载时校正关键词空白、数值范围与名单空白项，默认值与既有界面一致。
+配置模型位于 `common` 的 `config`，使用 Cloth Config 的 AutoConfig 与 Gson 序列化，文件名为 `ingamecnl`；客户端配置页面入口位于 `client/config`。字段分为筛选、日志容量、自动展开、颜色、面板和单人游戏六组：筛选保存级别与关键词；日志容量保存条数上限与文本量上限（MiB）；自动展开保存总开关、触发级别、触发关键词、高度百分比、停留毫秒数、Esc 收起开关和静默秒数；颜色保存时间、各级别、logger、普通消息和错误消息的 RGB 值（渲染时补为不透明 ARGB）；面板保存高度百分比、动画毫秒数和不透明度百分比，三项同时用于仅查看、日志和命令模式；单人游戏保存远程命令总开关、名单模式以及玩家名/IP 名单。加载时校正关键词空白、数值范围与名单空白项，默认值与既有界面一致。
 
-`ConsoleConfig` 在 `ConsoleClient.initialize()` 中注册一次，并把筛选与日志容量同步到 `LogCapture`。配置页面的保存和加载监听器都重新应用筛选与容量；调整容量后立即淘汰超出的最旧记录。日志模式执行 `filter` 命令时反向写入配置并保存，执行 `autosplash filter` 时写入自动展开关键词并保存。颜色、高度、动画时长和不透明度直接读取当前配置，不复制到界面状态。
+`ConsoleConfig` 在 `ConsoleClient.initialize()` 中注册一次，并把筛选与日志容量同步到 `LogCapture`。配置页面的保存和加载监听器都重新应用筛选与容量；调整容量后立即淘汰超出的最旧记录。日志模式执行 `filter` 命令时反向写入配置并保存，执行 `autosplash filter` 时写入自动展开关键词并保存。颜色、面板高度、动画时长和不透明度直接读取当前配置，不复制到界面状态。
+
+专用服务器配置独立于客户端配置，由 `ServerCommandConfig` 使用 AutoConfig 注册为 `ingamecnl-server`，文件位于服务端 `config/ingamecnl-server.json`。字段分为开关、名单、限流/令牌、审计与日志流：开关默认关闭；名单模式默认白名单，玩家名、UUID、IP 三组名单默认空；限流默认每分钟 20 次、最小间隔 200 毫秒；令牌默认 300 秒；审计与日志流默认开启；日志积压默认 10000 条。配置在服务端初始化时加载，管理命令 `reload` 重新读取；调整后不会改写客户端配置。`on`、`off` 与 `reload` 修改后清空令牌、订阅与限流状态，并向在线玩家重新下发 v2 能力，客户端据此重新握手与订阅。
 
 配置页面由 `AutoConfigClient` 创建；Fabric 的 Mod Menu 入口和 NeoForge 的 `IConfigScreenFactory` 扩展点都把模组列表界面作为父界面。配置界面打开时暂停仅查看与自动展开叠加层绘制，关闭后按原状态恢复。Cloth Config 在 Fabric 与 NeoForge 都是必需运行依赖；Mod Menu 只影响 Fabric 的配置入口，未安装时不影响其他功能。
 

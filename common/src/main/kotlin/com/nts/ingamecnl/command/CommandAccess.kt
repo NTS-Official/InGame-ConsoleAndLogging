@@ -8,7 +8,7 @@ import net.minecraft.server.players.NameAndId
 internal object CommandAccess {
     fun isAllowed(player: ServerPlayer): Boolean {
         val server = player.level().server
-        if (!server.isSingleplayer) return false
+        if (!server.isSingleplayer) return DedicatedCommandAccess.isAllowed(player)
         if (server.isSingleplayerOwner(NameAndId(player.gameProfile))) return true
         if (!ConsoleConfig.allowRemoteCommandMode()) return false
 

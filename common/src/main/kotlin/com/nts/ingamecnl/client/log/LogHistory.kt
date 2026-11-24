@@ -1,4 +1,5 @@
 package com.nts.ingamecnl.client.log
+import com.nts.ingamecnl.log.LogRecord
 
 import com.nts.ingamecnl.log.LogLimits
 
@@ -23,6 +24,7 @@ internal class LogHistory(
     private var evictedCount = 0L
     private var visibleCountTotal = 0L
     private var version = 0L
+    private var structureVersion = 0L
     private var lastEvictedSequence = -1L
     private var snapshot: List<LogRecord> = emptyList()
     private var snapshotVersion = -1L
@@ -38,6 +40,10 @@ internal class LogHistory(
 
     val visibleTotal: Long
         get() = visibleCountTotal
+
+    /** 仅当可见记录被淘汰、顺序发生结构性变化时递增；新增记录不递增。 */
+    val structureRevision: Long
+        get() = structureVersion
 
     fun configure(recordCapacity: Long, characterCapacity: Long) {
         require(recordCapacity in 1..LogLimits.MAX_RECORD_CAPACITY)
@@ -110,6 +116,7 @@ internal class LogHistory(
         while (visible.isNotEmpty() && visible.first().sequence <= lastEvictedSequence) {
             visible.removeFirst()
             version++
+            structureVersion++
         }
     }
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "ingamecnl",
+  "id": "${mod_id}",
   "version": "${version}",
   "name": "In-Game Console & Logging",
   "description": "An in-game logging viewer and command console with a adjustable overlay.",
@@ -12,18 +12,21 @@
     "sources": "https://github.com/NTS-Official/InGame-ConsoleAndLogging"
   },
   "license": "GPL-3.0-only",
-  "icon": "assets/ingamecnl/icon.png",
-  "environment": "client",
+  "icon": "assets/${mod_id}/icon.png",
+  "environment": "*",
   "entrypoints": {
     "client": [
       "com.nts.ingamecnl.fabric.InGameConsoleFabric"
+    ],
+    "server": [
+      "com.nts.ingamecnl.fabric.InGameConsoleFabricServer"
     ],
     "modmenu": [
       "com.nts.ingamecnl.fabric.ModMenuIntegration"
     ]
   },
   "mixins": [
-    "ingamecnl.mixins.json"
+    "${mod_id}.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.20.1",
@@ -32,9 +35,9 @@
     "architectury": ">=20.1.16",
     "fabric-api": "*",
     "fabric-language-kotlin": ">=${fabric_language_kotlin_version}",
-    "cloth-config": ">=26.1.154",
-    "modmenu": ">=18.0.2"
+    "cloth-config": ">=26.1.154"
   },
   "suggests": {
+    "modmenu": ">=18.0.2"
   }
 }

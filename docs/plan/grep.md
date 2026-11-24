@@ -22,7 +22,7 @@ flowchart LR
     M --> R[按页序发布位图和阅读索引]
 ```
 
-`common` 的客户端日志包提供一个查询入口，负责解析后的查询、线程调度和结果所有权。`LogHistory` 负责登记有序页范围，向搜索和实时视图提供按页读取的入口。GUI 只提交、取消、读取状态和当前页。FFM 适配器仅承担数据布局、加载和调用。两个加载器复用这一实现。Zig 构建入口在 [common/src/native](../../common/src/native/build.zig)，Gradle 在 `:common:processResources` 前按七个目标运行 `zig build -Drelease -Dtarget=<triple>`，把各平台动态库复制到共享资源；Android arm64 目标使用 NDK 的 libc 与 sysroot，按 API 26 构建。
+`common` 的客户端日志包提供一个查询入口，负责解析后的查询、线程调度和结果所有权。`LogHistory` 负责登记有序页范围，向搜索和实时视图提供按页读取的入口。GUI 只提交、取消、读取状态和当前页。FFM 适配器仅承担数据布局、加载和调用。两个加载器复用这一实现。Zig 构建入口在 [common/src/native](../../common/src/native/build.zig)，Gradle 在 `:common:processResources` 前按七个目标运行 `zig build -Drelease -Dtarget=<triple> -Dlibrary-name=<mod_id>_grep`，把各平台动态库复制到共享资源；Android arm64 目标使用 NDK 的 libc 与 sysroot，按 API 26 构建。
 
 ## 动态尾部与静态分块
 

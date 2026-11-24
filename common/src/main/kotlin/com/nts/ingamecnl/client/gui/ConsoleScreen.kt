@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.client.gui
 
+import com.nts.ingamecnl.MOD_ID
+
 import com.nts.ingamecnl.client.ConsoleClient
 import com.nts.ingamecnl.client.command.CommandAvailability
 import com.nts.ingamecnl.client.config.ConfigFilterSync
@@ -38,7 +40,7 @@ internal class ConsoleScreen(
     val overlayOnly: Boolean = false,
     val autoSplash: Boolean = false,
     initiallyExpanded: Boolean = false,
-) : Screen(Component.translatable("console.ingamecnl.title")) {
+) : Screen(Component.translatable("console.$MOD_ID.title")) {
     private var modeSwitchGesture = ModeSwitchGesture.READY
     internal var transition = PanelTransition(
         if (initiallyExpanded) 1f else 0f,
@@ -51,42 +53,40 @@ internal class ConsoleScreen(
     internal var feedbackError = false
     private var historyIndex = -1
     private var historyDraft = ""
-    internal val logView: LogView by lazy { LogView(font) }
+    internal val timelineView: TimelineView by lazy { TimelineView(font) }
     internal val grepView: GrepView by lazy { GrepView(font) }
-    private val commandView: CommandView by lazy { CommandView(font, state.commandTranscript) }
+
+    internal val timelineSource: TimelineSource
+        get() = when {
+            state.mode == ConsoleMode.COMMAND && ConsoleClient.isMixedMode() -> state.serverConsole
+            state.mode == ConsoleMode.COMMAND -> state.commandTranscript
+            else -> LogTimelineSource
+        }
 
     internal val panelHeight: Int
         get() {
-            val fraction = when {
-                autoSplash -> ConsoleConfig.autoSplashHeightPercent() / 100f
-                overlayOnly -> ConsoleConfig.overlayHeightPercent() / 100f
-                else -> 0.65f
+            val fraction = if (autoSplash) {
+                ConsoleConfig.autoSplashHeightPercent() / 100f
+            } else {
+                ConsoleConfig.panelHeightPercent() / 100f
             }
             return (height * fraction).toInt().coerceAtLeast(144).coerceAtMost(height)
         }
     internal val slideDurationNanos: Long
-        get() = if (overlayOnly || autoSplash) ConsoleConfig.overlayAnimationNanos() else SLIDE_DURATION_NANOS
+        get() = ConsoleConfig.panelAnimationNanos()
     internal val contentBottomInset: Int
-        get() = when {
-            autoSplash -> 12
-            overlayOnly -> 34
-            else -> 64
-        }
+        get() = if (autoSplash) 12 else 34
     internal val acceptsTextInput: Boolean
         get() = !overlayOnly && state.mode != ConsoleMode.VIEW_ONLY
     internal val isScrolled: Boolean
-        get() = when {
-            grepView.isOpen -> true
-            state.mode == ConsoleMode.COMMAND -> commandView.isScrolled
-            else -> logView.isScrolled
-        }
+        get() = if (grepView.isOpen) true else timelineView.isScrolled
     internal val modeSwitchHint: String
         get() {
             val switchKey = ConsoleClient.switchModeLabel()
-            val fullHint = Component.translatable("console.ingamecnl.switch_mode", switchKey).string
+            val fullHint = Component.translatable("console.$MOD_ID.switch_mode", switchKey).string
             val maxWidth = ((width - 48) / 2).coerceAtLeast(0)
             val hint = if (font.width(fullHint) <= maxWidth) fullHint
-            else Component.translatable("console.ingamecnl.switch_mode.compact", switchKey).string
+            else Component.translatable("console.$MOD_ID.switch_mode.compact", switchKey).string
             return font.plainSubstrByWidth(hint, maxWidth)
         }
 
@@ -99,9 +99,9 @@ internal class ConsoleScreen(
             PlainTextButton(0, 0, 20, 20, Component.literal("×"), { onClose() }, font),
         )
         closeButton.setTooltip(
-            Tooltip.create(Component.translatable("console.ingamecnl.close")),
+            Tooltip.create(Component.translatable("console.$MOD_ID.close")),
         )
-        input = addRenderableWidget(EditBox(font, 1, 20, Component.translatable("console.ingamecnl.input")))
+        input = addRenderableWidget(EditBox(font, 1, 20, Component.translatable("console.$MOD_ID.input")))
         input.setBordered(false)
         input.setMaxLength(32767)
         input.value = state.draft
@@ -124,13 +124,16 @@ internal class ConsoleScreen(
         val top = ((transition.fractionAt(nowNanos, slideDurationNanos) - 1f) * panelHeight).roundToInt()
         if (overlayOnly) return top
         val hintX = width - 8 - font.width(modeSwitchHint)
-        closeButton.setRectangle(20, 20, (width - 28).coerceAtLeast(0), top + 6)
-        input.setRectangle((hintX - 28).coerceAtLeast(1), font.lineHeight + 2, 20, top + panelHeight - 22)
+        closeButton.setRectangle(20, 20, (width - 28).coerceAtLeast(0), top + ConsolePanelRenderer.TITLE_OFFSET)
+        input.setRectangle((hintX - 28).coerceAtLeast(1), font.lineHeight + 2, 20, top + panelHeight - 14)
         return top
     }
 
     private fun selectMode(mode: ConsoleMode) {
         grepView.close()
+        if (state.mode == ConsoleMode.COMMAND && mode != ConsoleMode.COMMAND && ConsoleClient.isMixedMode()) {
+            state.serverConsole.resetFilter()
+        }
         if (mode == ConsoleMode.VIEW_ONLY) {
             ConsoleClient.enterViewOnly(previousScreen)
             return
@@ -141,7 +144,7 @@ internal class ConsoleScreen(
         feedbackError = false
         input.setHint(inputHint())
         resetHistoryNavigation()
-        if (mode == ConsoleMode.COMMAND) commandView.returnToBottom()
+        if (mode == ConsoleMode.COMMAND) timelineView.returnToBottom()
         setInitialFocus(input)
     }
 
@@ -155,7 +158,7 @@ internal class ConsoleScreen(
         input.setEditable(true)
         closeButton.active = true
         closeButton.setTooltip(
-            Tooltip.create(Component.translatable("console.ingamecnl.close")),
+            Tooltip.create(Component.translatable("console.$MOD_ID.close")),
         )
     }
 
@@ -226,6 +229,10 @@ internal class ConsoleScreen(
             }
             return true
         }
+        if (event.key() == GLFW.GLFW_KEY_HOME && canScrollToTop()) {
+            scrollToTop()
+            return true
+        }
         if (ConsoleClient.pageUpKey()?.matches(event) == true) {
             scrollPage(true)
             return true
@@ -258,7 +265,7 @@ internal class ConsoleScreen(
         if (grepView.isOpen || transition.target == PanelTarget.COLLAPSED) return true
         val top = repositionPanel(System.nanoTime())
         if (event.y() < 0 || event.y() >= top + panelHeight) return true
-        val hint = logView.followHintBounds()
+        val hint = timelineView.followHintBounds()
         if (hint != null &&
             event.x() >= hint.x && event.x() <= hint.x + hint.width &&
             event.y() >= hint.y && event.y() <= hint.y + hint.height
@@ -278,7 +285,7 @@ internal class ConsoleScreen(
         if (transition.target == PanelTarget.COLLAPSED) return true
         val top = repositionPanel(System.nanoTime())
         val bottom = top + panelHeight
-        if (mouseY < top + 30 || mouseY > bottom - contentBottomInset) return true
+        if (mouseY < top + ConsolePanelRenderer.CONTENT_OFFSET || mouseY > bottom - contentBottomInset) return true
         if (scrollY == 0.0) return true
         val delta = if (scrollY > 0) scrollY.toInt().coerceAtLeast(1) else scrollY.toInt().coerceAtMost(-1)
         if (grepView.isOpen) grepView.scroll(-delta) else scrollByRecords(delta)
@@ -287,6 +294,7 @@ internal class ConsoleScreen(
 
     override fun onClose() {
         grepView.close()
+        if (state.mode == ConsoleMode.COMMAND && ConsoleClient.isMixedMode()) state.serverConsole.resetFilter()
         if (overlayOnly || transition.target == PanelTarget.COLLAPSED) return
         val nowNanos = System.nanoTime()
         transition = PanelTransition(transition.fractionAt(nowNanos, slideDurationNanos), PanelTarget.COLLAPSED, nowNanos)
@@ -316,57 +324,91 @@ internal class ConsoleScreen(
     }
 
     internal fun scrollPage(up: Boolean) {
-        if (grepView.isOpen) {
-            grepView.scroll(if (up) -1 else 1)
-        } else if (state.mode == ConsoleMode.COMMAND) {
-            commandView.scrollPage(up, logViewWidth(), logViewportHeight())
-        } else {
-            logView.scrollPage(up, logViewWidth(), logViewportHeight())
-        }
+        if (grepView.isOpen) grepView.scroll(if (up) -1 else 1) else timelineView.scrollPage(up)
     }
 
     internal fun returnToBottom() {
         if (grepView.isOpen) return
-        if (state.mode == ConsoleMode.COMMAND) commandView.returnToBottom() else logView.returnToBottom()
+        timelineView.returnToBottom()
+    }
+
+    private fun canScrollToTop(): Boolean = !grepView.isOpen && input.value.isEmpty()
+
+    private fun scrollToTop() {
+        timelineView.scrollToTop()
     }
 
     private fun scrollByRecords(delta: Int) {
-        if (grepView.isOpen) {
-            grepView.scroll(-delta)
-        } else if (state.mode == ConsoleMode.COMMAND) {
-            commandView.scrollByLines(delta, logViewWidth(), logViewportHeight())
-        } else {
-            logView.scrollByRecords(delta, logViewWidth(), logViewportHeight())
-        }
+        if (grepView.isOpen) grepView.scroll(-delta) else timelineView.scrollByLines(delta)
     }
 
     internal fun drawContent(graphics: GuiGraphicsExtractor, left: Int, top: Int, right: Int, bottom: Int) {
-        when {
-            grepView.isOpen -> grepView.draw(graphics, left, top, right, bottom)
-            state.mode == ConsoleMode.COMMAND -> commandView.draw(graphics, left, top, right, bottom)
-            else -> logView.draw(graphics, left, top, right, bottom)
+        if (grepView.isOpen) {
+            grepView.draw(graphics, left, top, right, bottom)
+        } else {
+            timelineView.draw(graphics, timelineSource, left, top, right, bottom)
         }
     }
 
-    internal fun commandStatusText(): String = when (ConsoleClient.commandAvailability()) {
-        CommandAvailability.LOCAL ->
-            Component.translatable("console.ingamecnl.command.status.local").string
-        CommandAvailability.REMOTE ->
-            Component.translatable("console.ingamecnl.command.status.remote").string
-        CommandAvailability.PENDING ->
-            Component.translatable("console.ingamecnl.command.status.pending").string
-        CommandAvailability.UNAVAILABLE ->
-            Component.translatable("console.ingamecnl.command.unavailable").string
+    internal fun commandStatusText(): String {
+        if (ConsoleClient.isMixedMode()) return mixedStatusText()
+        return when (ConsoleClient.commandAvailability()) {
+            CommandAvailability.LOCAL ->
+                Component.translatable("console.$MOD_ID.command.status.local").string
+            CommandAvailability.REMOTE ->
+                Component.translatable("console.$MOD_ID.command.status.remote").string
+            CommandAvailability.PENDING ->
+                Component.translatable("console.$MOD_ID.command.status.pending").string
+            CommandAvailability.UNAVAILABLE ->
+                Component.translatable("console.$MOD_ID.command.unavailable").string
+        }
     }
 
+    internal fun mixedStatusText(): String {
+        val status = when (ConsoleClient.commandAvailability()) {
+            CommandAvailability.REMOTE ->
+                if (ConsoleClient.serverLogStreaming()) {
+                    Component.translatable("console.$MOD_ID.mixed.connected").string
+                } else {
+                    Component.translatable("console.$MOD_ID.mixed.no_stream").string
+                }
+            CommandAvailability.PENDING -> Component.translatable("console.$MOD_ID.mixed.pending").string
+            else -> when (ConsoleClient.mixedReason()) {
+                "disabled" -> Component.translatable("console.$MOD_ID.mixed.disabled").string
+                "not_allowed" -> Component.translatable("console.$MOD_ID.mixed.denied").string
+                else -> Component.translatable("console.$MOD_ID.mixed.unavailable").string
+            }
+        }
+        val filter = state.serverConsole.filterText()
+        return if (filter.isEmpty()) status else "$status · $filter"
+    }
+
+    internal fun panelTitle(): Component = title
+
+    internal fun titleColor(): Int =
+        if (isMixedCommandMode()) TimelinePalette.MIXED else 0xFFF0F4FA.toInt()
+
+    internal fun statusColor(): Int =
+        if (isMixedCommandMode() || (state.mode == ConsoleMode.COMMAND && ConsoleClient.mixedModePending())) {
+            TimelinePalette.MIXED
+        } else {
+            0xFFB1C0D1.toInt()
+        }
+
+    internal fun inputPrefix(): String =
+        if (isMixedCommandMode()) ">" else state.mode.prefix
+
+    private fun isMixedCommandMode(): Boolean =
+        state.mode == ConsoleMode.COMMAND && ConsoleClient.isMixedMode()
+
     private fun inputHint(): Component = Component.translatable(
-        if (state.mode == ConsoleMode.COMMAND) "console.ingamecnl.input.command"
-        else state.mode.statusKey,
+        when {
+            state.mode == ConsoleMode.COMMAND && ConsoleClient.isMixedMode() ->
+                "console.$MOD_ID.input.mixed"
+            state.mode == ConsoleMode.COMMAND -> "console.$MOD_ID.input.command"
+            else -> state.mode.statusKey
+        },
     )
-
-    private fun logViewWidth(): Int = (width - 16).coerceAtLeast(1)
-
-    private fun logViewportHeight(): Int = (panelHeight - 30 - contentBottomInset).coerceAtLeast(1)
 
     private fun navigateHistory(direction: Int): Boolean {
         val history = when (state.mode) {
@@ -422,17 +464,55 @@ internal class ConsoleScreen(
         }
         state.commandHistory.add(text)
         resetHistoryNavigation()
-        if (!ConsoleClient.submitCommand(text)) {
-            feedback = Component.translatable("console.ingamecnl.command.unavailable")
-            feedbackError = true
+        if (ConsoleClient.isMixedMode() && text.startsWith(":")) {
+            submitMixedLocalCommand(text)
             return
         }
-        state.commandTranscript.addInput(text)
-        commandView.returnToBottom()
+        if (!ConsoleClient.submitCommand(text)) {
+            report(Component.translatable("console.$MOD_ID.command.unavailable"), error = true)
+            return
+        }
+        if (ConsoleClient.isMixedMode()) state.serverConsole.addInput(text)
+        else state.commandTranscript.addInput(text)
+        timelineView.returnToBottom()
         input.value = ""
         state.draft = ""
         feedback = null
         feedbackError = false
+    }
+
+    private fun submitMixedLocalCommand(text: String) {
+        val body = text.removePrefix(":").trim()
+        when {
+            body.isEmpty() -> report(Component.translatable("console.$MOD_ID.error.mixed_command"), error = true)
+            body.equals("filter", ignoreCase = true) || body.startsWith("filter ", ignoreCase = true) -> {
+                submitMixedFilter(body)
+            }
+            body.equals("grep", ignoreCase = true) || body.startsWith("grep ", ignoreCase = true) -> {
+                submitGrepCommand(body, state.serverConsole.snapshot())
+            }
+            else -> report(Component.translatable("console.$MOD_ID.error.mixed_command"), error = true)
+        }
+    }
+
+    private fun submitMixedFilter(text: String) {
+        when (val parsed = parseFilterCommand(text)) {
+            is FilterCommandParse.Error -> {
+                report(commandError(parsed.error, parsed.detail), error = true)
+            }
+            is FilterCommandParse.Parsed -> {
+                val command = parsed.command
+                if (command == FilterCommand.Show) {
+                    report(Component.literal(state.serverConsole.filterText()))
+                } else {
+                    val filter = state.serverConsole.filter.apply(command) ?: return
+                    state.serverConsole.updateFilter(filter)
+                    report(confirmation(command))
+                }
+                input.value = ""
+                state.draft = ""
+            }
+        }
     }
 
     private fun submitLogCommand() {
@@ -472,14 +552,15 @@ internal class ConsoleScreen(
         }
     }
 
-    private fun submitGrepCommand(text: String) {
+    private fun submitGrepCommand(
+        text: String,
+        snapshot: com.nts.ingamecnl.client.log.LogSnapshot = LogCapture.history.snapshot(),
+    ) {
         when (val parsed = parseGrepCommand(text)) {
             is GrepCommandParse.Error -> {
-                feedback = grepCommandError(parsed.error, parsed.detail)
-                feedbackError = true
+                report(grepCommandError(parsed.error, parsed.detail), error = true)
             }
             is GrepCommandParse.Parsed -> {
-                val snapshot = LogCapture.history.snapshot()
                 grepView.start(parsed.query, snapshot)
                 input.setFocused(false)
                 feedback = null
@@ -491,23 +572,23 @@ internal class ConsoleScreen(
     }
 
     private fun grepCommandError(error: GrepCommandError, detail: String?): Component = when (error) {
-        GrepCommandError.UNTERMINATED_QUOTE -> Component.translatable("console.ingamecnl.error.grep_quote")
+        GrepCommandError.UNTERMINATED_QUOTE -> Component.translatable("console.$MOD_ID.error.grep_quote")
         GrepCommandError.UNEXPECTED_ARGUMENT ->
-            Component.translatable("console.ingamecnl.error.grep_argument", detail ?: "")
+            Component.translatable("console.$MOD_ID.error.grep_argument", detail ?: "")
         GrepCommandError.UNKNOWN_OPTION ->
-            Component.translatable("console.ingamecnl.error.grep_option", detail ?: "")
+            Component.translatable("console.$MOD_ID.error.grep_option", detail ?: "")
         GrepCommandError.MISSING_VALUE ->
-            Component.translatable("console.ingamecnl.error.grep_missing_value", detail ?: "")
+            Component.translatable("console.$MOD_ID.error.grep_missing_value", detail ?: "")
         GrepCommandError.DUPLICATE_OPTION ->
-            Component.translatable("console.ingamecnl.error.grep_duplicate", detail ?: "")
-        GrepCommandError.MISSING_KEYWORD -> Component.translatable("console.ingamecnl.error.grep_missing_keyword")
-        GrepCommandError.MISSING_LEVEL -> Component.translatable("console.ingamecnl.error.grep_missing_level")
-        GrepCommandError.EMPTY_KEYWORD -> Component.translatable("console.ingamecnl.error.grep_empty_keyword")
+            Component.translatable("console.$MOD_ID.error.grep_duplicate", detail ?: "")
+        GrepCommandError.MISSING_KEYWORD -> Component.translatable("console.$MOD_ID.error.grep_missing_keyword")
+        GrepCommandError.MISSING_LEVEL -> Component.translatable("console.$MOD_ID.error.grep_missing_level")
+        GrepCommandError.EMPTY_KEYWORD -> Component.translatable("console.$MOD_ID.error.grep_empty_keyword")
         GrepCommandError.INVALID_LEVEL ->
-            Component.translatable("console.ingamecnl.error.invalid_level", detail ?: "")
+            Component.translatable("console.$MOD_ID.error.invalid_level", detail ?: "")
         GrepCommandError.INVALID_TIME ->
-            Component.translatable("console.ingamecnl.error.grep_time", detail ?: "")
-        GrepCommandError.START_AFTER_END -> Component.translatable("console.ingamecnl.error.grep_start_after_end")
+            Component.translatable("console.$MOD_ID.error.grep_time", detail ?: "")
+        GrepCommandError.START_AFTER_END -> Component.translatable("console.$MOD_ID.error.grep_start_after_end")
     }
 
     private fun submitAutoSplashCommand(text: String) {
@@ -521,7 +602,7 @@ internal class ConsoleScreen(
                     is AutoSplashCommand.SetKeyword -> {
                         ConsoleConfig.setAutoSplashKeyword(command.keyword)
                         feedback = Component.translatable(
-                            "console.ingamecnl.autosplash.set.keyword",
+                            "console.$MOD_ID.autosplash.set.keyword",
                             command.keyword,
                         )
                         feedbackError = false
@@ -536,16 +617,16 @@ internal class ConsoleScreen(
         val filter = LogCapture.filter
         val filterText = when {
             filter.level != null && filter.keyword != null ->
-                Component.translatable("console.ingamecnl.filter.both", filter.level.label, filter.keyword).string
+                Component.translatable("console.$MOD_ID.filter.both", filter.level.label, filter.keyword).string
             filter.level != null ->
-                Component.translatable("console.ingamecnl.filter.level", filter.level.label).string
+                Component.translatable("console.$MOD_ID.filter.level", filter.level.label).string
             filter.keyword != null ->
-                Component.translatable("console.ingamecnl.filter.keyword", filter.keyword).string
-            else -> Component.translatable("console.ingamecnl.filter.none").string
+                Component.translatable("console.$MOD_ID.filter.keyword", filter.keyword).string
+            else -> Component.translatable("console.$MOD_ID.filter.none").string
         }
         val history = LogCapture.history
         val counters = Component.translatable(
-            "console.ingamecnl.counters",
+            "console.$MOD_ID.counters",
             history.visibleSize,
             history.evicted,
             LogCapture.dropped,
@@ -554,34 +635,55 @@ internal class ConsoleScreen(
     }
 
     private fun commandError(error: FilterCommandError, detail: String? = null): Component = when (error) {
-        FilterCommandError.UNKNOWN_COMMAND -> Component.translatable("console.ingamecnl.error.unknown_command")
-        FilterCommandError.MISSING_SUBCOMMAND -> Component.translatable("console.ingamecnl.error.missing_subcommand")
-        FilterCommandError.UNKNOWN_SUBCOMMAND -> Component.translatable("console.ingamecnl.error.unknown_subcommand")
-        FilterCommandError.MISSING_LEVEL -> Component.translatable("console.ingamecnl.error.missing_level")
+        FilterCommandError.UNKNOWN_COMMAND -> Component.translatable("console.$MOD_ID.error.unknown_command")
+        FilterCommandError.MISSING_SUBCOMMAND -> Component.translatable("console.$MOD_ID.error.missing_subcommand")
+        FilterCommandError.UNKNOWN_SUBCOMMAND -> Component.translatable("console.$MOD_ID.error.unknown_subcommand")
+        FilterCommandError.MISSING_LEVEL -> Component.translatable("console.$MOD_ID.error.missing_level")
         FilterCommandError.INVALID_LEVEL ->
-            Component.translatable("console.ingamecnl.error.invalid_level", detail ?: "")
-        FilterCommandError.MISSING_KEYWORD -> Component.translatable("console.ingamecnl.error.missing_keyword")
+            Component.translatable("console.$MOD_ID.error.invalid_level", detail ?: "")
+        FilterCommandError.MISSING_KEYWORD -> Component.translatable("console.$MOD_ID.error.missing_keyword")
         FilterCommandError.TOO_MANY_ARGUMENTS ->
-            Component.translatable("console.ingamecnl.error.too_many_arguments")
+            Component.translatable("console.$MOD_ID.error.too_many_arguments")
     }
 
     private fun autoSplashCommandError(error: AutoSplashCommandError): Component = when (error) {
         AutoSplashCommandError.MISSING_SUBCOMMAND ->
-            Component.translatable("console.ingamecnl.error.autosplash_missing_subcommand")
+            Component.translatable("console.$MOD_ID.error.autosplash_missing_subcommand")
         AutoSplashCommandError.UNKNOWN_SUBCOMMAND ->
-            Component.translatable("console.ingamecnl.error.autosplash_unknown_subcommand")
+            Component.translatable("console.$MOD_ID.error.autosplash_unknown_subcommand")
         AutoSplashCommandError.MISSING_KEYWORD ->
-            Component.translatable("console.ingamecnl.error.autosplash_missing_keyword")
+            Component.translatable("console.$MOD_ID.error.autosplash_missing_keyword")
+    }
+
+    private fun report(message: Component, error: Boolean = false) {
+        when (val sink = noteSink()) {
+            null -> {
+                feedback = message
+                feedbackError = error
+            }
+            else -> {
+                sink(message, error)
+                timelineView.returnToBottom()
+                feedback = null
+                feedbackError = false
+            }
+        }
+    }
+
+    private fun noteSink(): ((Component, Boolean) -> Unit)? = when {
+        isMixedCommandMode() -> state.serverConsole::addNote
+        state.mode == ConsoleMode.COMMAND -> state.commandTranscript::addNote
+        else -> null
     }
 
     private fun confirmation(command: FilterCommand): Component = when (command) {
         is FilterCommand.SetLevel ->
-            Component.translatable("console.ingamecnl.filter.set.level", command.level.label)
+            Component.translatable("console.$MOD_ID.filter.set.level", command.level.label)
         is FilterCommand.SetKeyword ->
-            Component.translatable("console.ingamecnl.filter.set.keyword", command.keyword)
-        FilterCommand.ResetAll -> Component.translatable("console.ingamecnl.filter.reset.all")
-        FilterCommand.ResetLevel -> Component.translatable("console.ingamecnl.filter.reset.level")
-        FilterCommand.ResetKeyword -> Component.translatable("console.ingamecnl.filter.reset.keyword")
+            Component.translatable("console.$MOD_ID.filter.set.keyword", command.keyword)
+        FilterCommand.ResetAll -> Component.translatable("console.$MOD_ID.filter.reset.all")
+        FilterCommand.ResetLevel -> Component.translatable("console.$MOD_ID.filter.reset.level")
+        FilterCommand.ResetKeyword -> Component.translatable("console.$MOD_ID.filter.reset.keyword")
         FilterCommand.Show -> Component.literal(logStatusText())
     }
 }

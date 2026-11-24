@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.client.gui
 
+import com.nts.ingamecnl.MOD_ID
+
 import com.nts.ingamecnl.client.ConsoleClient
 import com.nts.ingamecnl.client.log.LogCapture
 import com.nts.ingamecnl.config.ConsoleConfig
@@ -8,24 +10,29 @@ import net.minecraft.network.chat.Component
 import kotlin.math.roundToInt
 
 internal object ConsolePanelRenderer {
+    const val TITLE_OFFSET = 6
+    const val CONTENT_OFFSET = 21
+
     fun drawPanel(screen: ConsoleScreen, graphics: GuiGraphicsExtractor): Boolean {
         val top = screen.repositionPanel(System.nanoTime())
         val bottom = top + screen.panelHeight
         if (bottom <= 0) return false
         graphics.enableScissor(0, 0, screen.width, bottom)
-        graphics.fill(0, top, screen.width, bottom, 0x1A10151C)
-        graphics.fill(0, bottom - 1, screen.width, bottom, 0x1A526176)
-        graphics.enableScissor(8, top + 6, (screen.width - 32).coerceAtLeast(8), top + 26)
-        graphics.text(screen.font, screen.title, 8, top + 12, 0xFFF0F4FA.toInt())
+        val alpha = ConsoleConfig.panelAlpha() shl 24
+        graphics.fill(0, top, screen.width, bottom, alpha or 0x10151C)
+        graphics.fill(0, bottom - 1, screen.width, bottom, alpha or 0x526176)
+        graphics.enableScissor(8, top, (screen.width - 32).coerceAtLeast(8), top + CONTENT_OFFSET)
+        graphics.text(screen.font, screen.panelTitle(), 8, top + TITLE_OFFSET, screen.titleColor())
         graphics.disableScissor()
 
-        val contentTop = top + 30
+        val contentTop = top + CONTENT_OFFSET
         val contentBottom = bottom - screen.contentBottomInset
         screen.drawContent(graphics, 8, contentTop, (screen.width - 8).coerceAtLeast(9), contentBottom)
 
-        val statusY = bottom - 57
-        val status = statusText(screen)
-        val followHint = followHint(screen)
+        val statusY = bottom - 27
+        val feedback = screen.feedback
+        val status = if (feedback != null) feedback.string else statusText(screen)
+        val followHint = if (feedback != null) null else followHint(screen)
         val followWidth = followHint?.let { screen.font.width(it) } ?: 0
         val followX = screen.width - 8 - followWidth
         val statusWidth = (if (followHint != null) followX - 12 else screen.width - 8) - 8
@@ -34,25 +41,24 @@ internal object ConsolePanelRenderer {
             screen.font.clipToWidth(status, statusWidth.coerceAtLeast(0)),
             8,
             statusY,
-            0xFFB1C0D1.toInt(),
+            when {
+                feedback != null && screen.feedbackError -> 0xFFFF7B72.toInt()
+                feedback != null -> 0xFF9AD48B.toInt()
+                else -> screen.statusColor()
+            },
         )
         if (followHint != null) {
             graphics.text(screen.font, followHint, followX, statusY, 0xFFFFD27F.toInt())
-            screen.logView.setFollowHint(followX - 2, statusY - 2, followWidth + 4, screen.font.lineHeight + 4)
+            val hintX = followX - 2
+            val hintY = statusY - 2
+            val hintWidth = followWidth + 4
+            val hintHeight = screen.font.lineHeight + 4
+            screen.timelineView.setFollowHint(hintX, hintY, hintWidth, hintHeight)
         } else {
-            screen.logView.clearFollowHint()
+            screen.timelineView.clearFollowHint()
         }
 
-        screen.feedback?.let {
-            graphics.text(
-                screen.font,
-                screen.font.clipToWidth(it.string, (screen.width - 16).coerceAtLeast(1)),
-                8,
-                bottom - 44,
-                if (screen.feedbackError) 0xFFFF7B72.toInt() else 0xFF9AD48B.toInt(),
-            )
-        }
-        graphics.text(screen.font, screen.state.mode.prefix, 8, screen.input.y, 0xFF8ED5BD.toInt())
+        graphics.text(screen.font, screen.inputPrefix(), 8, screen.input.y, 0xFF8ED5BD.toInt())
         val hint = screen.modeSwitchHint
         graphics.text(
             screen.font,
@@ -70,20 +76,21 @@ internal object ConsolePanelRenderer {
         val bottom = top + screen.panelHeight
         if (bottom <= 0) return
         graphics.enableScissor(0, 0, screen.width, bottom)
-        val alpha = ConsoleConfig.overlayAlpha() shl 24
+        val alpha = ConsoleConfig.panelAlpha() shl 24
         graphics.fill(0, top, screen.width, bottom, alpha or 0x10151C)
         graphics.fill(0, bottom - 1, screen.width, bottom, alpha or 0x526176)
         graphics.text(
             screen.font,
-            Component.translatable("console.ingamecnl.overlay.title"),
+            screen.panelTitle(),
             8,
-            top + 12,
-            0xFFF0F4FA.toInt(),
+            top + TITLE_OFFSET,
+            screen.titleColor(),
         )
-        screen.logView.draw(
+        screen.timelineView.draw(
             graphics,
+            LogTimelineSource,
             8,
-            top + 30,
+            top + CONTENT_OFFSET,
             (screen.width - 8).coerceAtLeast(9),
             bottom - screen.contentBottomInset,
         )
@@ -115,11 +122,12 @@ internal object ConsolePanelRenderer {
         val bottom = top + screen.panelHeight
         if (bottom <= 0) return
         graphics.enableScissor(0, 0, screen.width, bottom)
-        val alpha = ConsoleConfig.overlayAlpha() shl 24
+        val alpha = ConsoleConfig.panelAlpha() shl 24
         graphics.fill(0, top, screen.width, bottom, alpha or 0x10151C)
         graphics.fill(0, bottom - 1, screen.width, bottom, alpha or 0x526176)
-        screen.logView.draw(
+        screen.timelineView.draw(
             graphics,
+            LogTimelineSource,
             8,
             top + 8,
             (screen.width - 8).coerceAtLeast(9),
@@ -136,11 +144,11 @@ internal object ConsolePanelRenderer {
     }
 
     private fun followHint(screen: ConsoleScreen): Component? {
-        if (screen.grepView.isOpen || screen.state.mode != ConsoleMode.LOG) return null
-        val count = screen.logView.newSinceScroll()
+        if (screen.grepView.isOpen) return null
+        val count = screen.timelineView.newSinceScroll()
         if (count <= 0) return null
         return Component.translatable(
-            "console.ingamecnl.follow",
+            "console.$MOD_ID.follow",
             count,
             ConsoleClient.keyLabel(ConsoleClient.goToBottomKey()),
         )
@@ -150,16 +158,16 @@ internal object ConsolePanelRenderer {
         val filter = LogCapture.filter
         val filterText = when {
             filter.level != null && filter.keyword != null ->
-                Component.translatable("console.ingamecnl.filter.both", filter.level.label, filter.keyword).string
+                Component.translatable("console.$MOD_ID.filter.both", filter.level.label, filter.keyword).string
             filter.level != null ->
-                Component.translatable("console.ingamecnl.filter.level", filter.level.label).string
+                Component.translatable("console.$MOD_ID.filter.level", filter.level.label).string
             filter.keyword != null ->
-                Component.translatable("console.ingamecnl.filter.keyword", filter.keyword).string
-            else -> Component.translatable("console.ingamecnl.filter.none").string
+                Component.translatable("console.$MOD_ID.filter.keyword", filter.keyword).string
+            else -> Component.translatable("console.$MOD_ID.filter.none").string
         }
         val history = LogCapture.history
         val counters = Component.translatable(
-            "console.ingamecnl.counters",
+            "console.$MOD_ID.counters",
             history.visibleSize,
             history.evicted,
             LogCapture.dropped,

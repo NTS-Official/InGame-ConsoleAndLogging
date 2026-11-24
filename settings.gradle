@@ -7,7 +7,9 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'ingamecnl'
+def projectProperties = new Properties()
+file('gradle.properties').withInputStream { projectProperties.load(it) }
+rootProject.name = projectProperties.getProperty('mod_id')
 
 include 'common'
 include 'fabric'

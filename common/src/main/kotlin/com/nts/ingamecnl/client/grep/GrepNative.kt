@@ -1,5 +1,7 @@
 package com.nts.ingamecnl.client.grep
 
+import com.nts.ingamecnl.MOD_ID
+
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
@@ -35,15 +37,15 @@ internal object GrepNative {
         }
         if (isAndroid()) {
             return if (arch == "aarch64") {
-                Platform("android-aarch64", "libingamecnl_grep.so")
+                Platform("android-aarch64", "lib${MOD_ID}_grep.so")
             } else {
                 null
             }
         }
         return when {
-            os.startsWith("windows") -> Platform("windows-$arch", "ingamecnl_grep.dll")
-            os.startsWith("linux") -> Platform("linux-$arch", "libingamecnl_grep.so")
-            os.startsWith("mac") || os.startsWith("darwin") -> Platform("macos-$arch", "libingamecnl_grep.dylib")
+            os.startsWith("windows") -> Platform("windows-$arch", "${MOD_ID}_grep.dll")
+            os.startsWith("linux") -> Platform("linux-$arch", "lib${MOD_ID}_grep.so")
+            os.startsWith("mac") || os.startsWith("darwin") -> Platform("macos-$arch", "lib${MOD_ID}_grep.dylib")
             else -> null
         }
     }
@@ -61,10 +63,10 @@ internal object GrepNative {
 
     private fun load(): State? {
         val platform = platform ?: return null
-        val resource = "assets/ingamecnl/native/${platform.directory}/${platform.library}"
+        val resource = "assets/$MOD_ID/native/${platform.directory}/${platform.library}"
         val stream = GrepNative::class.java.getResourceAsStream("/$resource") ?: return null
         return try {
-            val directory = Files.createTempDirectory("ingamecnl-native")
+            val directory = Files.createTempDirectory("${MOD_ID}-native")
             val file = directory.resolve(platform.library)
             stream.use { Files.copy(it, file, StandardCopyOption.REPLACE_EXISTING) }
             val arena = Arena.ofShared()
@@ -94,7 +96,7 @@ internal object GrepNative {
             )
             State(arena, scanHandle)
         } catch (error: Throwable) {
-            System.err.println("[ingamecnl] native grep unavailable: ${error.message ?: error.javaClass.name}")
+            System.err.println("[$MOD_ID] native grep unavailable: ${error.message ?: error.javaClass.name}")
             null
         }
     }
