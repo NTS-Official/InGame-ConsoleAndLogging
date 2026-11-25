@@ -43,3 +43,4 @@ build/
 /**/**/**/zig-out
 /**/**/**/zig-pkg
 /.workbuddy
+/.idea
