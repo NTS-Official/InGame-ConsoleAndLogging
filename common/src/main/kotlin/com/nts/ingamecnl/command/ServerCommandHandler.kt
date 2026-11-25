@@ -10,6 +10,7 @@ internal object ServerCommandHandler {
     private val audit = LogManager.getLogger("${MOD_ID}-audit")
 
     fun sendCapability(player: ServerPlayer) {
+        if (ServerSilence.hides(player)) return
         CommandNetwork.sendCapability(
             player,
             player.level().server.isSingleplayer && CommandAccess.isAllowed(player),
@@ -17,6 +18,7 @@ internal object ServerCommandHandler {
     }
 
     fun sendCapabilityV2(player: ServerPlayer) {
+        if (ServerSilence.hides(player)) return
         val dedicated = !player.level().server.isSingleplayer
         val allowed = CommandAccess.isAllowed(player)
         val token = if (dedicated && allowed) ServerCommandSessions.issue(player) else null
@@ -38,9 +40,17 @@ internal object ServerCommandHandler {
                 logStreaming = dedicated && allowed && ServerCommandConfig.logStreamingEnabled(),
             ),
         )
+        if (dedicated && allowed) sendCommandTree(player)
+    }
+
+    /** 控制台看到的命令树与玩家自己的游戏权限无关，按服务端最高权限重建后单独下发。 */
+    fun sendCommandTree(player: ServerPlayer) {
+        val server = player.level().server
+        CommandNetwork.sendCommandTree(player, ConsoleCommandTree.packet(server))
     }
 
     fun executeRequest(player: ServerPlayer, requestId: Long, command: String) {
+        if (ServerSilence.hides(player)) return
         if (!player.level().server.isSingleplayer) {
             CommandNetwork.sendResult(player, requestId, ServerCommandResult(CommandResultStatus.DENIED))
             return
@@ -49,6 +59,7 @@ internal object ServerCommandHandler {
     }
 
     fun executeRequestV2(player: ServerPlayer, requestId: Long, token: String, command: String) {
+        if (ServerSilence.hides(player)) return
         if (!ServerCommandSessions.validate(player, token)) {
             CommandNetwork.sendResultV2(player, requestId, ServerCommandResult(CommandResultStatus.DENIED))
             return

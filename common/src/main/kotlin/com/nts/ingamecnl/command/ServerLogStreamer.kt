@@ -21,6 +21,10 @@ internal object ServerLogStreamer {
     private val subscriptions = ConcurrentHashMap<UUID, Subscription>()
 
     fun subscribe(player: ServerPlayer, token: String, sinceSequence: Long) {
+        if (ServerSilence.hides(player)) {
+            subscriptions.remove(player.uuid)
+            return
+        }
         if (!ServerCommandSessions.validate(player, token) || !canStream(player)) {
             CommandNetwork.sendLogBatch(player, ServerLogBatch(true, 0, emptyList()))
             return
@@ -41,7 +45,9 @@ internal object ServerLogStreamer {
             val subscription = subscriptions[player.uuid] ?: continue
             if (!ServerCommandSessions.validate(player, subscription.token) || !canStream(player)) {
                 subscriptions.remove(player.uuid)
-                CommandNetwork.sendLogBatch(player, ServerLogBatch(true, 0, emptyList()))
+                if (!ServerSilence.hides(player)) {
+                    CommandNetwork.sendLogBatch(player, ServerLogBatch(true, 0, emptyList()))
+                }
                 continue
             }
             if (subscription.pending.isEmpty()) {

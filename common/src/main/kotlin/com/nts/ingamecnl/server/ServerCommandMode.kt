@@ -6,6 +6,7 @@ import com.nts.ingamecnl.command.ServerCommandHandler
 import com.nts.ingamecnl.command.ServerCommandSessions
 import com.nts.ingamecnl.command.ServerLogStreamer
 import com.nts.ingamecnl.command.ServerRequestGuard
+import com.nts.ingamecnl.command.ServerSilence
 import com.nts.ingamecnl.config.ServerCommandConfig
 import com.nts.ingamecnl.server.log.ServerLogCapture
 import dev.architectury.event.events.common.CommandRegistrationEvent
@@ -38,26 +39,40 @@ object ServerCommandMode {
         CommandRegistrationEvent.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
                 Commands.literal(MOD_ID)
+                    .requires { source -> canManage(source) }
                     .then(
                         Commands.literal("commandmode")
-                            .requires { source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN) }
                             .then(Commands.literal("status").executes { source -> status(source.source) })
                             .then(Commands.literal("on").executes { source -> setEnabled(source.source, true) })
                             .then(Commands.literal("off").executes { source -> setEnabled(source.source, false) })
+                            .then(
+                                Commands.literal("silent")
+                                    .then(Commands.literal("on").executes { source -> setSilent(source.source, true) })
+                                    .then(Commands.literal("off").executes { source -> setSilent(source.source, false) }),
+                            )
                             .then(Commands.literal("reload").executes { source -> reload(source.source) }),
                     ),
             )
         }
     }
 
+    /** 静默模式下，未被授权的玩家连这个命令都不该在命令表里看到。 */
+    private fun canManage(source: net.minecraft.commands.CommandSourceStack): Boolean {
+        if (!source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) return false
+        val player = source.player ?: return true
+        return !ServerSilence.hides(player)
+    }
+
     private fun status(source: net.minecraft.commands.CommandSourceStack): Int {
         val enabled = if (ServerCommandConfig.enabled()) "on" else "off"
         val mode = ServerCommandConfig.accessMode()
         val streaming = if (ServerCommandConfig.logStreamingEnabled()) "on" else "off"
+        val silent = if (ServerCommandConfig.silent()) "on" else "off"
         source.sendSuccess(
             {
                 Component.literal(
-                    "$MOD_NAME command mode: $enabled, access=$mode, names=${ServerCommandConfig.names().size}, " +
+                    "$MOD_NAME command mode: $enabled, silent=$silent, access=$mode, " +
+                        "names=${ServerCommandConfig.names().size}, " +
                         "uuids=${ServerCommandConfig.uuids().size}, ips=${ServerCommandConfig.ips().size}, " +
                         "protocol=${CommandProtocol.VERSION}, logStreaming=$streaming, " +
                         "subscribers=${ServerLogStreamer.subscriberCount()}",
@@ -74,6 +89,17 @@ object ServerCommandMode {
         resyncPlayers(source.server)
         source.sendSuccess(
             { Component.literal("$MOD_NAME command mode ${if (value) "enabled" else "disabled"}") },
+            true,
+        )
+        return 1
+    }
+
+    private fun setSilent(source: net.minecraft.commands.CommandSourceStack, value: Boolean): Int {
+        ServerCommandConfig.setSilent(value)
+        resetSessions()
+        resyncPlayers(source.server)
+        source.sendSuccess(
+            { Component.literal("$MOD_NAME silent mode ${if (value) "enabled" else "disabled"}") },
             true,
         )
         return 1

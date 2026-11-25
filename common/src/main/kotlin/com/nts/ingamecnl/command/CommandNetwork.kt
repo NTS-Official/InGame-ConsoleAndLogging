@@ -8,6 +8,7 @@ import io.netty.buffer.Unpooled
 import net.minecraft.core.RegistryAccess
 import net.minecraft.network.RegistryFriendlyByteBuf
 import net.minecraft.network.chat.ComponentSerialization
+import net.minecraft.network.protocol.game.ClientboundCommandsPacket
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
 
@@ -24,6 +25,7 @@ internal object CommandNetwork {
     private val LOG_SUBSCRIBE = id("server_log_subscribe_v2")
     private val LOG_UNSUBSCRIBE = id("server_log_unsubscribe_v2")
     private val LOG_BATCH = id("server_log_batch_v2")
+    private val COMMAND_TREE = id("server_command_tree_v2")
 
     internal var onCapabilityResponse: (Boolean) -> Unit = {}
     internal var onCommandResponse: (Long, ServerCommandResult) -> Unit = { _, _ -> }
@@ -31,6 +33,7 @@ internal object CommandNetwork {
     internal var onCommandResponseV2: (Long, ServerCommandResult) -> Unit = { _, _ -> }
     internal var onServerLogBatch: (ServerLogBatch) -> Unit = {}
     internal var onServerLogReset: () -> Unit = {}
+    internal var onCommandTree: (ClientboundCommandsPacket) -> Unit = {}
 
     private var registered = false
 
@@ -151,6 +154,14 @@ internal object CommandNetwork {
                 }
             },
         )
+        NetworkManager.registerReceiver(
+            NetworkManager.Side.S2C,
+            COMMAND_TREE,
+            NetworkManager.NetworkReceiver<RegistryFriendlyByteBuf> { buffer, context ->
+                val packet = ClientboundCommandsPacket.STREAM_CODEC.decode(buffer)
+                context.queue { onCommandTree(packet) }
+            },
+        )
     }
 
     fun canSendCapabilityRequest(): Boolean =
@@ -240,6 +251,13 @@ internal object CommandNetwork {
         buffer.writeVarInt(batch.records.size)
         batch.records.forEach { writeRecord(buffer, it) }
         NetworkManager.sendToPlayer(player, LOG_BATCH, buffer)
+    }
+
+    /** 下发与玩家游戏权限无关的完整服务端命令树。 */
+    fun sendCommandTree(player: ServerPlayer, packet: ClientboundCommandsPacket) {
+        val buffer = buffer(player.level().server.registryAccess())
+        ClientboundCommandsPacket.STREAM_CODEC.encode(buffer, packet)
+        NetworkManager.sendToPlayer(player, COMMAND_TREE, buffer)
     }
 
     private fun writeResult(buffer: RegistryFriendlyByteBuf, result: ServerCommandResult) {

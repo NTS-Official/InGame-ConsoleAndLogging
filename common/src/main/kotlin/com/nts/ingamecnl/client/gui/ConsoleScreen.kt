@@ -4,12 +4,17 @@ import com.nts.ingamecnl.MOD_ID
 
 import com.nts.ingamecnl.client.ConsoleClient
 import com.nts.ingamecnl.client.command.CommandAvailability
+import com.nts.ingamecnl.client.command.CommandFormatting
+import com.nts.ingamecnl.client.command.CommandHighlighter
+import com.nts.ingamecnl.client.command.CommandInputState
+import com.nts.ingamecnl.client.mixin.CommandSuggestionsAccessor
 import com.nts.ingamecnl.client.config.ConfigFilterSync
 import com.nts.ingamecnl.client.grep.GrepCommandError
 import com.nts.ingamecnl.client.grep.GrepCommandParse
 import com.nts.ingamecnl.client.grep.GrepView
 import com.nts.ingamecnl.client.grep.parseGrepCommand
 import com.nts.ingamecnl.config.ConsoleConfig
+import com.nts.ingamecnl.log.LogLevel
 import com.nts.ingamecnl.client.log.AutoSplashCommand
 import com.nts.ingamecnl.client.log.AutoSplashCommandError
 import com.nts.ingamecnl.client.log.AutoSplashCommandParse
@@ -23,6 +28,7 @@ import com.nts.ingamecnl.client.log.parseFilterCommand
 import net.minecraft.CrashReport
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.Button
+import net.minecraft.client.gui.components.CommandSuggestions
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.components.PlainTextButton
 import net.minecraft.client.gui.components.Tooltip
@@ -31,8 +37,17 @@ import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
+import net.minecraft.network.chat.Style
+import net.minecraft.util.FormattedCharSequence
 import org.lwjgl.glfw.GLFW
 import kotlin.math.roundToInt
+
+/** 面板高度超过该百分比时不再向下展开候选列表，避免遮挡过多游戏画面。 */
+private const val COMPLETION_MAX_PANEL_PERCENT = 90
+
+/** 原版候选列表的固定起点与行数上限，用于把列表整体平移到输入行下方。 */
+private const val SUGGESTION_ORIGIN_Y = 72
+private const val SUGGESTION_MAX_ROWS = 8
 
 internal class ConsoleScreen(
     internal val state: ConsoleState,
@@ -53,8 +68,28 @@ internal class ConsoleScreen(
     internal var feedbackError = false
     private var historyIndex = -1
     private var historyDraft = ""
+    private val highlighter: CommandHighlighter by lazy { CommandHighlighter(minecraft, { state.mode }) }
+    private var inputState = CommandInputState.EMPTY
     internal val timelineView: TimelineView by lazy { TimelineView(font) }
     internal val grepView: GrepView by lazy { GrepView(font) }
+    internal var suggestions: CommandSuggestions? = null
+        private set
+
+    /** 补全区（候选列表或错误/用法提示）可以下沉展示的前提条件。 */
+    internal val completionControlVisible: Boolean
+        get() = acceptsTextInput &&
+            !grepView.isOpen &&
+            this::input.isInitialized &&
+            input.isFocused &&
+            ConsoleConfig.panelHeightPercent() <= COMPLETION_MAX_PANEL_PERCENT
+
+    /** 候选列表只在补全区可用且原版列表已展开时下沉展示。 */
+    internal val completionVisible: Boolean
+        get() = completionControlVisible && suggestions?.isVisible == true
+
+    /** 候选列表整体下移到输入行下方所需的垂直位移。 */
+    internal val suggestionOffset: Int
+        get() = if (!this::input.isInitialized) 0 else input.y + font.lineHeight + 2 - SUGGESTION_ORIGIN_Y
 
     internal val timelineSource: TimelineSource
         get() = when {
@@ -62,6 +97,14 @@ internal class ConsoleScreen(
             state.mode == ConsoleMode.COMMAND -> state.commandTranscript
             else -> LogTimelineSource
         }
+
+    /** 当前面板模式，供命令树选择使用。 */
+    internal val currentMode: ConsoleMode
+        get() = state.mode
+
+    /** 当前输入内容，供命令树选择使用。 */
+    internal val currentInput: String
+        get() = if (this::input.isInitialized) input.value else ""
 
     internal val panelHeight: Int
         get() {
@@ -104,9 +147,33 @@ internal class ConsoleScreen(
         input = addRenderableWidget(EditBox(font, 1, 20, Component.translatable("console.$MOD_ID.input")))
         input.setBordered(false)
         input.setMaxLength(32767)
+        // 输入框不让出焦点：否则 Tab 会被界面的焦点导航抢走，转去选中右上角关闭按钮。
+        input.setCanLoseFocus(false)
         input.value = state.draft
-        input.setResponder { state.draft = it }
+        input.setResponder {
+            state.draft = it
+            refreshInputState()
+        }
+        input.addFormatter { text, offset -> formatInput(text, offset) }
         input.setHint(inputHint())
+        suggestions = CommandSuggestions(
+            minecraft,
+            this,
+            input,
+            font,
+            true,
+            false,
+            0,
+            SUGGESTION_MAX_ROWS,
+            false,
+            0xB0000000.toInt(),
+        ).also {
+            // 与原版聊天栏一致：Tab 始终用于补全并展开候选，不进入界面的焦点切换。
+            it.setAllowHiding(false)
+            it.setAllowSuggestions(true)
+            if (minecraft.player != null) it.updateCommandInfo()
+        }
+        refreshInputState()
         resetHistoryNavigation()
         repositionElements()
     }
@@ -145,6 +212,7 @@ internal class ConsoleScreen(
         input.setHint(inputHint())
         resetHistoryNavigation()
         if (mode == ConsoleMode.COMMAND) timelineView.returnToBottom()
+        refreshInputState()
         setInitialFocus(input)
     }
 
@@ -214,6 +282,7 @@ internal class ConsoleScreen(
             }
             return true
         }
+        if (canComplete() && suggestions?.keyPressed(event) == true) return true
         if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
             onClose()
             return true
@@ -263,6 +332,11 @@ internal class ConsoleScreen(
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
         if (grepView.isOpen || transition.target == PanelTarget.COLLAPSED) return true
+        if (completionVisible) {
+            val offset = suggestionOffset
+            val shifted = MouseButtonEvent(event.x(), event.y() - offset, event.buttonInfo())
+            if (suggestions?.mouseClicked(shifted) == true) return true
+        }
         val top = repositionPanel(System.nanoTime())
         if (event.y() < 0 || event.y() >= top + panelHeight) return true
         val hint = timelineView.followHintBounds()
@@ -283,6 +357,7 @@ internal class ConsoleScreen(
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
         if (transition.target == PanelTarget.COLLAPSED) return true
+        if (completionVisible && scrollY != 0.0 && suggestions?.mouseScrolled(scrollY) == true) return true
         val top = repositionPanel(System.nanoTime())
         val bottom = top + panelHeight
         if (mouseY < top + ConsolePanelRenderer.CONTENT_OFFSET || mouseY > bottom - contentBottomInset) return true
@@ -318,9 +393,11 @@ internal class ConsoleScreen(
             ConsolePanelRenderer.drawOverlay(this, graphics)
             return
         }
-        if (!ConsolePanelRenderer.drawPanel(this, graphics)) return
+        if (!ConsolePanelRenderer.drawPanel(this, graphics, mouseX, mouseY)) return
         super.extractRenderState(graphics, mouseX, mouseY, delta)
         graphics.disableScissor()
+        // 候选列表在面板下方展开，必须等面板剪裁结束后绘制，否则只会露出被裁掉的一条。
+        ConsolePanelRenderer.drawSuggestions(this, graphics, mouseX, mouseY)
     }
 
     internal fun scrollPage(up: Boolean) {
@@ -400,6 +477,30 @@ internal class ConsoleScreen(
 
     private fun isMixedCommandMode(): Boolean =
         state.mode == ConsoleMode.COMMAND && ConsoleClient.isMixedMode()
+
+    /** 输入内容按原版规则着色：字面量灰、参数轮换彩色、未解析部分红。 */
+    private fun formatInput(text: String, offset: Int): FormattedCharSequence {
+        val parse = (suggestions as? CommandSuggestionsAccessor)?.getCurrentParse()
+        if (parse != null) return CommandFormatting.format(parse, text, offset)
+        val color = when (inputState) {
+            CommandInputState.INCOMPLETE -> ConsoleConfig.levelColor(LogLevel.WARN)
+            CommandInputState.INVALID -> ConsoleConfig.levelColor(LogLevel.ERROR)
+            else -> return FormattedCharSequence.forward(text, Style.EMPTY)
+        }
+        return FormattedCharSequence.forward(text, Style.EMPTY.withColor(color))
+    }
+
+    /** 重新判定输入内容并刷新原版候选列表。 */
+    private fun refreshInputState() {
+        if (!this::input.isInitialized || !acceptsTextInput) return
+        inputState = highlighter.stateOf(input.value)
+        // 切换模式或命令树后原版不会重新解析，这里主动让缓存的解析结果失效。
+        (suggestions as? CommandSuggestionsAccessor)?.setCurrentParse(null)
+        suggestions?.updateCommandInfo()
+    }
+
+    private fun canComplete(): Boolean =
+        acceptsTextInput && !grepView.isOpen && this::input.isInitialized && input.isFocused
 
     private fun inputHint(): Component = Component.translatable(
         when {
@@ -676,8 +777,7 @@ internal class ConsoleScreen(
         else -> null
     }
 
-    private fun confirmation(command: FilterCommand): Component = when (command) {
-        is FilterCommand.SetLevel ->
+    private fun confirmation(command: FilterCommand): Component = when (command) {        is FilterCommand.SetLevel ->
             Component.translatable("console.$MOD_ID.filter.set.level", command.level.label)
         is FilterCommand.SetKeyword ->
             Component.translatable("console.$MOD_ID.filter.set.keyword", command.keyword)

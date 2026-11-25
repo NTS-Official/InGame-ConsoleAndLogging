@@ -4,6 +4,7 @@ import com.nts.ingamecnl.MOD_ID
 
 import com.nts.ingamecnl.client.ConsoleClient
 import com.nts.ingamecnl.client.log.LogCapture
+import com.nts.ingamecnl.client.mixin.CommandSuggestionsAccessor
 import com.nts.ingamecnl.config.ConsoleConfig
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.network.chat.Component
@@ -13,7 +14,10 @@ internal object ConsolePanelRenderer {
     const val TITLE_OFFSET = 6
     const val CONTENT_OFFSET = 21
 
-    fun drawPanel(screen: ConsoleScreen, graphics: GuiGraphicsExtractor): Boolean {
+    /** 与原版 usage 行一致的行高。 */
+    private const val USAGE_LINE_HEIGHT = 12
+
+    fun drawPanel(screen: ConsoleScreen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int): Boolean {
         val top = screen.repositionPanel(System.nanoTime())
         val bottom = top + screen.panelHeight
         if (bottom <= 0) return false
@@ -70,6 +74,40 @@ internal object ConsolePanelRenderer {
         return true
     }
 
+    /**
+     * 原版补全区整体下移到输入行下方，面板过高时不展开。
+     * 有候选时只画候选列表；没有候选时按原版规则画错误/用法提示行。
+     */
+    fun drawSuggestions(screen: ConsoleScreen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
+        val suggestions = screen.suggestions ?: return
+        if (!screen.completionControlVisible) return
+        val offset = screen.suggestionOffset
+        if (screen.completionVisible) {
+            graphics.pose().pushMatrix()
+            graphics.pose().translate(0f, offset.toFloat())
+            suggestions.extractSuggestions(graphics, mouseX, mouseY - offset)
+            graphics.pose().popMatrix()
+            return
+        }
+        drawUsage(screen, graphics)
+    }
+
+    /** 原版把提示行画在聊天输入行上方，这里同样自下而上堆叠在状态行之上。 */
+    private fun drawUsage(screen: ConsoleScreen, graphics: GuiGraphicsExtractor) {
+        val lines = (screen.suggestions as? CommandSuggestionsAccessor)?.getCommandUsage() ?: return
+        if (lines.isEmpty()) return
+        val left = 8
+        val width = lines.maxOf { screen.font.width(it) } + 2
+        val right = (left + width).coerceAtMost((screen.width - 8).coerceAtLeast(left + 1))
+        var y = screen.input.y - 13 - USAGE_LINE_HEIGHT - 2
+        for (line in lines.asReversed()) {
+            if (y < 0) break
+            graphics.fill(left - 1, y, right, y + USAGE_LINE_HEIGHT, 0xB0000000.toInt())
+            graphics.text(screen.font, line, left, y + 2, 0xFFFFFFFF.toInt())
+            y -= USAGE_LINE_HEIGHT
+        }
+    }
+
     fun drawOverlay(screen: ConsoleScreen, graphics: GuiGraphicsExtractor) {
         val top = ((screen.transition.fractionAt(System.nanoTime(), screen.slideDurationNanos) - 1f) *
             screen.panelHeight).roundToInt()
@@ -116,8 +154,7 @@ internal object ConsolePanelRenderer {
         graphics.disableScissor()
     }
 
-    fun drawAutoSplash(screen: ConsoleScreen, graphics: GuiGraphicsExtractor) {
-        val top = ((screen.transition.fractionAt(System.nanoTime(), screen.slideDurationNanos) - 1f) *
+    fun drawAutoSplash(screen: ConsoleScreen, graphics: GuiGraphicsExtractor) {        val top = ((screen.transition.fractionAt(System.nanoTime(), screen.slideDurationNanos) - 1f) *
             screen.panelHeight).roundToInt()
         val bottom = top + screen.panelHeight
         if (bottom <= 0) return

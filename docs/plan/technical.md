@@ -54,13 +54,18 @@ Fabric 的 `environment` 为 `*`，客户端与服务端入口分别初始化；
 | [LocalCommandSession.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/LocalCommandSession.kt) | 主机本地命令会话 |
 | [CommandAccess.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandAccess.kt) | 主机与局域网客户端的命令模式授权 |
 | [ServerCommandHandler.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerCommandHandler.kt) | 服务端请求校验与执行 |
-| [CommandNetwork.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandNetwork.kt) | 命令能力与请求/响应网络包 |
+| [CommandNetwork.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandNetwork.kt) | 命令能力、请求/响应与命令树下发的网络包 |
+| [ConsoleCommandTree.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ConsoleCommandTree.kt) | 按服务端最高权限重建控制台可见的命令树 |
 | [RemoteCommandSession.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/RemoteCommandSession.kt) | 非主机客户端命令会话 |
 | [RemoteCommandCapability.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/RemoteCommandCapability.kt) | 远程命令能力探测、令牌与会话状态 |
+| [CommandTrees.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/CommandTrees.kt) | 客户端本地命令树、冒号命令树与服务端命令树的选取 |
+| [CommandHighlighter.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/CommandHighlighter.kt) | 输入正误判定：本地命令复用解析器，命令模式走服务端命令树 |
+| [CommandFormatting.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/command/CommandFormatting.kt) | 按原版规则对输入行分段着色：字面量、参数轮换色与未解析段 |
 | [CommandTranscript.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/CommandTranscript.kt) | 有界命令时间线数据源与结果文案 |
 | [ServerConsoleData.kt](../../common/src/main/kotlin/com/nts/ingamecnl/client/gui/ServerConsoleData.kt) | 混合模式服务端日志原始缓冲、过滤、命令条目与查询快照 |
 | [ServerCommandConfig.kt](../../common/src/main/kotlin/com/nts/ingamecnl/config/ServerCommandConfig.kt) | 专用服务器命令开关、名单、限流、会话与日志配置 |
 | [DedicatedCommandAccess.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/DedicatedCommandAccess.kt) | 专用服务器名单与 UUID/IP 校验 |
+| [ServerSilence.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerSilence.kt) | 静默模式下判定是否向玩家隐藏本模组数据 |
 | [ServerCommandSessions.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerCommandSessions.kt) | 专用服务器短期能力令牌 |
 | [ServerRequestGuard.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/ServerRequestGuard.kt) | 命令请求频率限制与请求 ID 去重 |
 | [CommandProtocol.kt](../../common/src/main/kotlin/com/nts/ingamecnl/command/CommandProtocol.kt) | v2 能力与会话日志批次数据结构 |
@@ -151,9 +156,17 @@ Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日�
 
 非主机客户端通过 `ingamecnl:command_capability_request`、`command_capability`、`command_request`、`command_response` 四个 v1 通道与主机通信；专用服务器与新版客户端使用 `command_capability_v2_request`、`command_capability_v2`、`command_request_v2`、`command_response_v2`，以及 `server_log_subscribe_v2`、`server_log_unsubscribe_v2`、`server_log_batch_v2` 日志通道。v1 能力响应只返回是否允许；v2 额外返回短期令牌、TTL、拒绝原因、协议版本、是否为专用服务器混合模式与日志流开关，不泄露名单。只有专用服务器下发令牌；集成服务器（含对局域网开放的单人存档）返回 `mixed=false` 且不下发令牌，客户端继续使用 v1 通道，命令模式保持原名。服务端每次执行前重新校验真实 `ServerPlayer`、令牌、名单与请求频率，不信任客户端上报的身份。主机本人始终允许；局域网总开关关闭时拒绝所有非主机客户端；白名单要求玩家名忽略大小写、UUID 或 IP 精确匹配，任一命中即允许；黑名单命中即拒绝。白名单或黑名单为空时均拒绝所有玩家。专用服务器默认关闭命令模式，管理员用 `/ingamecnl commandmode status|on|off|reload` 管理，要求管理员权限；请求按每玩家分钟窗口、最小间隔和请求 ID 去重，命令执行写入审计日志。远程客户端必须安装本模组，普通远程服务器没有该通道。
 
+静默模式用于让未授权客户端无法察觉服务端装有本模组。`ServerSilence.hides(player)` 在 `silent` 开启且 `CommandAccess.isAllowed` 为假时返回真，`ServerCommandHandler` 的两个能力响应、两个命令请求入口与 `ServerLogStreamer` 的订阅、失效批次都据此直接返回，连 `DENIED` 与空日志批次也不发送，未授权客户端因此收不到任何本模组的数据。加载器在玩家加入时一次性下发全局通道表，无法按玩家裁剪，所以静默只能体现为不下发数据包与不暴露命令节点：`/ingamecnl` 的 `requires` 改为 `canManage`，管理员权限之外还要求发起者不是被静默的玩家，服务端控制台没有玩家实体因而始终可用。`/ingamecnl commandmode silent on|off` 写入 `silent` 后清空会话、订阅与限流状态并向在线玩家重新下发能力。
+
 命令输入与反馈进入 `CommandTranscript`，上限 200 条或 20000 字符，条目区分输入、输出与错误。所有模式的文本区共用 `TimelineView`，只切换 `TimelineSource`：日志模式用 `LogTimelineSource`，命令模式用 `CommandTranscript`，混合模式用 `ServerConsoleData`。`TimelineView` 用 `Font.split` 按传入内容区宽度换行并贴底显示，滚动偏移按新增行高度补偿，支持 PageUp/PageDown、Home、End 与滚轮；`LogLayout` 负责带序号、时间、级别与 logger 前缀的日志行排版及续行着色。状态行区分本地服务端、已授权局域网主机、等待授权与不可用。
 
+候选列表直接复用原版 `net.minecraft.client.gui.components.CommandSuggestions`：`ConsoleScreen` 用输入框、字体与自身 `Screen` 构造它，开启隐藏与自动建议，并把 `keyPressed`、`mouseScrolled`、`mouseClicked` 转发给它，因此 Tab 采纳与循环、↑/↓ 选择、Esc 收起、鼠标点选与滚轮都与原版一致。原版在 `anchorToBottom=false` 时把列表起点固定为 `y=72`，`ConsolePanelRenderer` 在调用 `extractSuggestions` 前用 `graphics.pose().translate` 把列表整体下移到输入行下方；行数由构造时的 `suggestionLineLimit` 控制，面板高度超过 90% 时不展开列表。输入行着色由 `CommandFormatting` 按原版 `formatText` 的规则分段完成：已解析的字面量用灰色，各参数按 AQUA、YELLOW、GREEN、LIGHT_PURPLE、GOLD 依次轮换，解析器尚未消费的尾部用红色；解析结果取自 `CommandSuggestionsAccessor`，尚未解析时退回 `CommandHighlighter` 的两档结果（未输完用 WARN 颜色、不可用用 ERROR 颜色）。没有候选时按原版 `updateUsageInfo` 的语义显示错误与用法提示：`CommandSuggestions` 在候选为空时把解析异常与 `getSmartUsage` 的用法行填入 `commandUsage`，`ConsolePanelRenderer` 通过 `CommandSuggestionsAccessor` 取出这些行，从输入行下方按 12 像素行高、半透明背景逐行绘制，因为原版 `extractUsage` 的坐标基于聊天栏底部而不适用于控制台面板。正误判定由 `client/command` 的 `CommandHighlighter` 提供：日志模式与 `:` 前缀复用 `parseFilterCommand`、`parseGrepCommand`、`parseAutoSplashCommand` 的解析结果，把 `MISSING_*` 一类错误视为未输完、其余视为不可用；命令模式从服务端命令树解析，末节点不可执行视为未输完。
+
 专用服务器授权成功后，命令模式界面显示为黄色的混合模式，但内部仍是 `ConsoleMode.COMMAND`。服务端用独立 Log4j Appender 采集日志到环形缓冲，默认 10000 条或 16 MiB，按序号淘汰；客户端订阅时先收到最近 `logBacklogLines` 条快照，之后服务端每 tick 最多推送 256 条或 64 KiB，客户端发现序号缺口时清空并重新请求。每个订阅在服务端持有待发队列，`lastSequence` 只推进到实际发出的最后一条，避免快照被批次上限截断后误判为已送达。服务端日志连同玩家聊天、加入退出等 root logger 输出一起推送，只进入 `ServerConsoleData`，不进入客户端 `LogCapture`，不触发自动展开。混合模式输入不以 `:` 开头时提交服务端命令；以 `:` 开头时在本地执行 `:filter` 或 `:grep`，不发送到服务端。`:filter` 使用独立的 `DisplayFilter` 快照，只影响后续到达的服务端日志，原始缓冲保留全部记录；状态行与 `:filter show` 同时显示当前规则与显示/隐藏计数，离开混合模式或断开连接时清除筛选状态。`:grep` 对原始缓冲建立 `LogSnapshot`，复用日志查询的后台扫描与阅读区。服务端日志、命令输入与命令输出由同一个 `TimelineView` 排进同一时间线，命令条目最多 200 条或 20000 字符；命令结果、执行失败和本地命令错误都作为时间线条目常驻，不再写界面底部的一次性提示。混合模式上翻后新记录到达时按新增行高度补偿滚动偏移，保持当前阅读位置。
+
+控制台使用的命令树与玩家自己的游戏权限无关。原版在 `Commands.sendCommands` 里按玩家权限裁剪命令树，玩家不是管理员就看不到 `gamemode`、`op` 等指令；控制台的授权由 `ingamecnl-server.json` 的名单决定，不应受玩家等级影响。服务端因此用 `MinecraftServer.createCommandSourceStack()` 的最高权限重建一份完整命令树（`ConsoleCommandTree` 复刻 `fillUsableCommands` 的过滤、重定向与递归），再用 `ClientboundCommandsPacket` 序列化，经 `ingamecnl:server_command_tree_v2` 通道单独下发给获授权的客户端。客户端用 `ClientboundCommandsPacket.getRoot` 与自实现的 `NodeBuilder` 还原成 `CommandDispatcher`，存入 `CommandTrees`。
+
+Brigadier 生成候选时不检查节点权限，裸名命令与冒号命令放在同一棵树下会互相污染候选，因此客户端维护三棵互不相干的树：日志模式的本地命令树（`filter`、`grep`、`autosplash`）、混合模式带冒号的本地命令树（`:filter`、`:grep`）与服务端命令树。原版候选列表固定从 `ClientPacketListener.getCommands()` 取树，`ClientPacketListenerMixin` 在控制台输入时按当前模式与输入前缀改返回应使用的树，其余场景保持原版行为；原版只在输入文本变化时才清空解析缓存，切换树后由 `CommandSuggestionsAccessor` 主动失效该缓存，避免候选沿用旧树的结果。日志模式的本地命令不带冒号，混合模式的本地命令必须带 `:`，其余输入走服务端命令树。`CommandSuggestionsAccessor` 同时暴露解析结果与 `commandUsage` 列表，供输入行着色与用法提示行绘制使用。
 
 ## 配置
 
@@ -161,7 +174,7 @@ Shift+Tab 在界面层和全局键盘接入中消费：仅查看模式进入日�
 
 `ConsoleConfig` 在 `ConsoleClient.initialize()` 中注册一次，并把筛选与日志容量同步到 `LogCapture`。配置页面的保存和加载监听器都重新应用筛选与容量；调整容量后立即淘汰超出的最旧记录。日志模式执行 `filter` 命令时反向写入配置并保存，执行 `autosplash filter` 时写入自动展开关键词并保存。颜色、面板高度、动画时长和不透明度直接读取当前配置，不复制到界面状态。
 
-专用服务器配置独立于客户端配置，由 `ServerCommandConfig` 使用 AutoConfig 注册为 `ingamecnl-server`，文件位于服务端 `config/ingamecnl-server.json`。字段分为开关、名单、限流/令牌、审计与日志流：开关默认关闭；名单模式默认白名单，玩家名、UUID、IP 三组名单默认空；限流默认每分钟 20 次、最小间隔 200 毫秒；令牌默认 300 秒；审计与日志流默认开启；日志积压默认 10000 条。配置在服务端初始化时加载，管理命令 `reload` 重新读取；调整后不会改写客户端配置。`on`、`off` 与 `reload` 修改后清空令牌、订阅与限流状态，并向在线玩家重新下发 v2 能力，客户端据此重新握手与订阅。
+专用服务器配置独立于客户端配置，由 `ServerCommandConfig` 使用 AutoConfig 注册为 `ingamecnl-server`，文件位于服务端 `config/ingamecnl-server.json`。字段分为开关、静默、名单、限流/令牌、审计与日志流：开关默认关闭；静默默认关闭；名单模式默认白名单，玩家名、UUID、IP 三组名单默认空；限流默认每分钟 20 次、最小间隔 200 毫秒；令牌默认 300 秒；审计与日志流默认开启；日志积压默认 10000 条。配置在服务端初始化时加载，管理命令 `reload` 重新读取；调整后不会改写客户端配置。`on`、`off`、`silent on|off` 与 `reload` 修改后清空令牌、订阅与限流状态，并向在线玩家重新下发 v2 能力，客户端据此重新握手与订阅。
 
 配置页面由 `AutoConfigClient` 创建；Fabric 的 Mod Menu 入口和 NeoForge 的 `IConfigScreenFactory` 扩展点都把模组列表界面作为父界面。配置界面打开时暂停仅查看与自动展开叠加层绘制，关闭后按原状态恢复。Cloth Config 在 Fabric 与 NeoForge 都是必需运行依赖；Mod Menu 只影响 Fabric 的配置入口，未安装时不影响其他功能。
 

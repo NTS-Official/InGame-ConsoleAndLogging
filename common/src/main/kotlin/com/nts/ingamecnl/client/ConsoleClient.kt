@@ -3,6 +3,7 @@ package com.nts.ingamecnl.client
 import com.mojang.blaze3d.platform.InputConstants
 import com.nts.ingamecnl.MOD_ID
 import com.nts.ingamecnl.client.command.CommandAvailability
+import com.nts.ingamecnl.client.command.CommandTrees
 import com.nts.ingamecnl.client.command.RemoteCommandAccess
 import com.nts.ingamecnl.client.command.RemoteCommandCapability
 import com.nts.ingamecnl.client.command.RemoteCommandSession
@@ -81,6 +82,16 @@ object ConsoleClient {
         }
         CommandNetwork.onServerLogBatch = { batch ->
             state.serverConsole.onBatch(batch.reset, batch.dropped, batch.records)
+        }
+        CommandNetwork.onCommandTree = { packet ->
+            val connection = Minecraft.getInstance().connection
+            if (connection != null) {
+                CommandTrees.onServerTree(
+                    packet,
+                    connection.registryAccess(),
+                    connection.enabledFeatures(),
+                )
+            }
         }
         RemoteCommandCapability.onChanged = {
             syncServerLogSubscription(Minecraft.getInstance())
@@ -322,6 +333,7 @@ object ConsoleClient {
         commandSession = null
         commandServer = null
         RemoteCommandCapability.reset()
+        CommandTrees.clearServer()
         state.commandTranscript.clear()
         state.serverConsole.clearAll()
     }

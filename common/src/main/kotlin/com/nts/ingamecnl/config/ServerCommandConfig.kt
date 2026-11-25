@@ -23,6 +23,10 @@ class ServerCommandConfigData : ConfigData {
 
     @JvmField
     @field:ConfigEntry.Gui.Tooltip
+    var silent: Boolean = false
+
+    @JvmField
+    @field:ConfigEntry.Gui.Tooltip
     var accessMode: ServerCommandAccessMode = ServerCommandAccessMode.WHITELIST
 
     @JvmField
@@ -99,6 +103,13 @@ object ServerCommandConfig {
 
     fun setEnabled(value: Boolean) {
         data.enabled = value
+        save()
+    }
+
+    fun silent(): Boolean = data.silent
+
+    fun setSilent(value: Boolean) {
+        data.silent = value
         save()
     }
 

@@ -17,11 +17,14 @@
 - 日志模式的 `grep -k <关键词> -l <级别> [-t1 <开始>] [-t2 <结束>]` 查询提交时固定原始历史快照，在后台单线程按 1024 条分页扫描；结果按页发布，支持取消。结果只读、不插入后续日志、不触发自动展开；阅读区支持逐条/翻页/首尾/横向滚动与 q/Esc 关闭。
 - 构建在 `:common:processResources` 前调用 Zig 交叉编译 Windows、Linux、macOS 的 x86_64/aarch64 与 Android arm64 comb 库，并全部打入两个平台的发布 JAR；Android 目标需要 NDK、按 API 26 构建，缺少时跳过。ASCII 字段按 64 条一批走原生扫描，非 ASCII、超批容量、平台不匹配或原生加载/调用失败时回退 JVM。
 - 命令模式通过专用命令会话执行：主机本地直接使用内置服务端控制台源，非主机客户端经局域网能力探测与主机授权后转发请求。命令在服务端线程执行，语法错误与执行异常转为反馈，结果写入有界命令时间线；局域网授权支持总开关、白名单/黑名单与玩家名/IP 匹配。
-- 专用服务器使用独立的 `ingamecnl-server.json`，默认关闭命令模式；支持按玩家名、UUID、IP 的白名单/黑名单、短期会话令牌、每玩家限流、请求 ID 去重与审计日志，管理员通过 `/ingamecnl commandmode status|on|off|reload` 管理，`status` 输出协议版本、日志流开关与订阅数。授权成功后命令模式显示为黄色混合模式，服务端日志经独立 Appender 与环形缓冲按序推送，客户端按 ttl 与序号续传，序号缺口时重新请求快照；每个订阅在服务端持有待发队列，`lastSequence` 只推进到实际发出的最后一条，快照不会被批次上限截断。服务端日志、玩家聊天与加入退出、命令输入和命令输出混排为同一时间线，命令结果与本地命令错误作为时间线条目常驻；`:filter` 只影响后续服务端日志并在状态行显示规则与显示/隐藏计数，`:grep` 对已接收的原始服务端日志快照查询，服务端日志不进入本地日志历史，也不触发自动展开。只有专用服务器下发 v2 令牌，对局域网开放的集成服务器返回 `mixed=false` 并继续使用 v1，命令模式保持原名。
+- 命令输入支持原版补全、行内着色与错误提示：`ConsoleScreen` 直接构造原版 `CommandSuggestions` 并把按键、滚轮与点击转发给它，候选列表用 `graphics.pose().translate` 整体下移到输入行下方，行数由 `suggestionLineLimit` 控制，面板高度超过 90% 时不展开；输入行由 `CommandFormatting` 按原版规则分段着色（字面量灰、参数轮换彩色、未解析尾部红），未取得解析结果时退回 `CommandHighlighter` 的两档判定（未输完 WARN、不可用 ERROR）；没有候选时用 `CommandSuggestions` 已填好的 `commandUsage` 在输入行下方绘制错误与用法提示行，不显示空白框。
+- 补全的命令树与玩家游戏权限无关：专用服务器按自身最高权限重建完整命令树，经 `server_command_tree_v2` 通道单独下发给被授权的客户端，非管理员玩家同样能补全 `gamemode`、`op` 等全部指令。客户端把候选来源拆成互不相干的三棵树——日志模式的本地命令、混合模式带 `:` 前缀的本地命令、服务端命令树——因为 Brigadier 生成候选时不检查节点权限，混在同一棵树里会互相干扰。
+- 专用服务器使用独立的 `ingamecnl-server.json`，默认关闭命令模式；支持按玩家名、UUID、IP 的白名单/黑名单、短期会话令牌、每玩家限流、请求 ID 去重与审计日志，管理员通过 `/ingamecnl commandmode status|on|off|reload` 管理，静默模式用 `silent on|off` 切换，`status` 输出开关、静默状态、协议版本、日志流开关与订阅数。授权成功后命令模式显示为黄色混合模式，服务端日志经独立 Appender 与环形缓冲按序推送，客户端按 ttl 与序号续传，序号缺口时重新请求快照；每个订阅在服务端持有待发队列，`lastSequence` 只推进到实际发出的最后一条，快照不会被批次上限截断。服务端日志、玩家聊天与加入退出、命令输入和命令输出混排为同一时间线，命令结果与本地命令错误作为时间线条目常驻；`:filter` 只影响后续服务端日志并在状态行显示规则与显示/隐藏计数，`:grep` 对已接收的原始服务端日志快照查询，服务端日志不进入本地日志历史，也不触发自动展开。只有专用服务器下发 v2 令牌，对局域网开放的集成服务器返回 `mixed=false` 并继续使用 v1，命令模式保持原名。
+- 静默模式让未授权客户端无法察觉服务端装有本模组：`ServerSilence.hides` 在 `silent` 开启且名单不允许时返回真，能力响应、命令请求入口与日志订阅都据此直接返回，连拒绝响应和空日志批次也不发送；`/ingamecnl` 的权限判断额外排除被静默的玩家，服务端控制台始终可管理。Fabric 在加入时一次性下发全局通道表，无法按玩家裁剪，所以静默只体现为不下发数据包与不暴露命令节点，客户端已安装本模组这一事实无法隐藏。`/ingamecnl commandmode silent on|off` 写入配置后清空会话、订阅与限流状态并重新下发能力。
 
 ## 阶段 2 验证
 
-`common` 的 Kotlin 编译、`fabric` 与 `neoforge` 的完整构建均已通过。Fabric 开发客户端可启动并显示默认仅查看叠加层、实时日志列表与筛选状态行，切换到日志模式后显示输入界面；Mod Menu 18.0.2 与 Cloth Config 26.1.154 均已加载，配置文件生成默认值。NeoForge 开发客户端通过 Kotlin for Forge 6.5.0 启动，加载 Cloth Config，配置入口已注册，未出现配置或元数据异常。配置页面由 Fabric Mod Menu 与 NeoForge 模组列表提供；颜色值已改为 RGB 并迁移旧配置。界面拆分与 Kotlin for Forge 改造后，Fabric 与 NeoForge 开发客户端均启动到标题界面；两端运行日志除 Mod Menu 在开发环境的图标提示外无异常。Android arm64 已在 Android 17 / SM8850 / Fold Craft Launcher / Java 25 环境验证加载。Fabric 专用服务器已启动并生成默认 `config/ingamecnl-server.json`，注册 v1/v2 命令与日志通道；混合模式客户端联机验证待完成。最终发布 JAR 为 `ingamecnl-fabric-1.2.5.jar` 与 `ingamecnl-neoforge-1.2.5.jar`。v2 能力字段、混合模式状态与计数、缺口重同步改动后，`:fabric:build` 与 `:neoforge:build` 重新通过；Fabric 专用服务器再次启动到 `Done`，注册 6 个命令与日志通道，独立日志 Appender 安装无异常；NeoForge 专用服务器同样启动到 `Done`，并在 `neoforge/run/config/ingamecnl-server.json` 生成默认关闭的服务端配置。
+`common` 的 Kotlin 编译、`fabric` 与 `neoforge` 的完整构建均已通过。Fabric 开发客户端可启动并显示默认仅查看叠加层、实时日志列表与筛选状态行，切换到日志模式后显示输入界面；Mod Menu 18.0.2 与 Cloth Config 26.1.154 均已加载，配置文件生成默认值。NeoForge 开发客户端通过 Kotlin for Forge 6.5.0 启动，加载 Cloth Config，配置入口已注册，未出现配置或元数据异常。配置页面由 Fabric Mod Menu 与 NeoForge 模组列表提供；颜色值已改为 RGB 并迁移旧配置。界面拆分与 Kotlin for Forge 改造后，Fabric 与 NeoForge 开发客户端均启动到标题界面；两端运行日志除 Mod Menu 在开发环境的图标提示外无异常。Android arm64 已在 Android 17 / SM8850 / Fold Craft Launcher / Java 25 环境验证加载。Fabric 专用服务器已启动并生成默认 `config/ingamecnl-server.json`，注册 v1/v2 命令与日志通道；混合模式客户端联机验证待完成。最终发布 JAR 为 `ingamecnl-fabric-1.4.4.jar` 与 `ingamecnl-neoforge-1.4.4.jar`。v2 能力字段、混合模式状态与计数、缺口重同步改动后，`:fabric:build` 与 `:neoforge:build` 重新通过；Fabric 专用服务器再次启动到 `Done`，注册 6 个命令与日志通道，独立日志 Appender 安装无异常；NeoForge 专用服务器同样启动到 `Done`，并在 `neoforge/run/config/ingamecnl-server.json` 生成默认关闭的服务端配置。服务端命令树下发通道与客户端三棵命令树拆分后，`:common`、`:fabric`、`:neoforge` 编译与两端构建再次通过，Fabric 专用服务器与客户端已启动，客户端注册了 `server_command_tree_v2` 接收器。
 
 待验证：
 
@@ -45,3 +48,5 @@
 ## 下一步
 
 按[实施顺序](plan/README.md#实施顺序)接入阶段 4 的自动预览和阶段 5 的服务端终端。模块边界和开发约定见 [AGENTS.md](../AGENTS.md)。
+
+命令输入的字面量、参数与未解析段着色，以及无候选时的错误与用法提示，均取自原版 `CommandSuggestions` 的解析结果与 `commandUsage`，不做更细的诊断码。命令诊断层（统一诊断码、溢出与越界、魔咒等级上限等业务校验、运行时动态命令表）列在[后续范围](plan/README.md#后续范围)，需独立项目先行，就绪后另行接入，不计入本项目实施阶段。
